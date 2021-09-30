@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
+
+	Openapi "jcli/client"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +19,7 @@ type containerCreateOptions struct {
 	jailParam  []string
 }
 
-func newContainerCreateCommand() *cobra.Command {
+func NewContainerCreateCommand() *cobra.Command {
 	opts := containerCreateOptions{}
 
 	createCmd := &cobra.Command{
@@ -39,7 +43,7 @@ func newContainerCreateCommand() *cobra.Command {
 	return createCmd
 }
 
-func newContainerRemoveCommand() *cobra.Command {
+func NewContainerRemoveCommand() *cobra.Command {
 	removeCmd := &cobra.Command{
 		Use:   "rm",
 		Short: "Remove one or more containers",
@@ -51,7 +55,7 @@ func newContainerRemoveCommand() *cobra.Command {
 	return removeCmd
 }
 
-func newContainerStartCommand() *cobra.Command {
+func NewContainerStartCommand() *cobra.Command {
 	var attach bool
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -65,7 +69,7 @@ func newContainerStartCommand() *cobra.Command {
 	return cmd
 }
 
-func newContainerStopCommand() *cobra.Command {
+func NewContainerStopCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop one or more running containers",
@@ -76,7 +80,7 @@ func newContainerStopCommand() *cobra.Command {
 	return cmd
 }
 
-func newContainerListCommand() *cobra.Command {
+func NewContainerListCommand() *cobra.Command {
 	var all bool
 
 	listCmd := &cobra.Command{
@@ -84,14 +88,34 @@ func newContainerListCommand() *cobra.Command {
 		Short: "List containers",
 		Long:  `List containers loooong`,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("The container ls command has been executed")
+			RunContainerList(cmd, args)
 		},
 	}
 	listCmd.Flags().BoolVarP(&all, "all", "a", false, "Show all containers (default shows just running)")
 	return listCmd
 }
 
-func newContainerCommand() *cobra.Command {
+func RunContainerList(cmd *cobra.Command, args []string) {
+	// FIXME: Simple and messy PoC (that works!)
+	client, err := Openapi.NewClient("http://localhost:8085/")
+	fmt.Println("What", err)
+	if err != nil {
+		fmt.Println("Internal error: ", err)
+	}
+	all := true
+	params := Openapi.ContainerListParams{
+		All: &all,
+	}
+	response, err := client.ContainerList(context.TODO(), &params)
+	if err != nil {
+		fmt.Println("Could not connect to jocker engine daemon: ", err)
+	}
+	fmt.Println("The container ls command has been executed", response)
+	bytes, err := io.ReadAll(response.Body)
+	fmt.Println("Body content:", string(bytes))
+}
+
+func NewContainerCommand() *cobra.Command {
 	containerCmd := &cobra.Command{
 		Use:                   "container",
 		Short:                 "Manage containers",
@@ -102,10 +126,10 @@ func newContainerCommand() *cobra.Command {
 		},
 	}
 
-	containerCmd.AddCommand(newContainerCreateCommand())
-	containerCmd.AddCommand(newContainerRemoveCommand())
-	containerCmd.AddCommand(newContainerStartCommand())
-	containerCmd.AddCommand(newContainerStopCommand())
-	containerCmd.AddCommand(newContainerListCommand())
+	containerCmd.AddCommand(NewContainerCreateCommand())
+	containerCmd.AddCommand(NewContainerRemoveCommand())
+	containerCmd.AddCommand(NewContainerStartCommand())
+	containerCmd.AddCommand(NewContainerStopCommand())
+	containerCmd.AddCommand(NewContainerListCommand())
 	return containerCmd
 }
