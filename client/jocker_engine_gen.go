@@ -37,9 +37,6 @@ type ContainerConfig struct {
 
 	// List of networks that the container should be connected to
 	Networks *[]string `json:"networks,omitempty"`
-
-	// User that is running the specified command
-	User *string `json:"user,omitempty"`
 }
 
 // summary description of a container
@@ -87,7 +84,7 @@ type ContainerCreateJSONBody ContainerConfig
 // ContainerCreateParams defines parameters for ContainerCreate.
 type ContainerCreateParams struct {
 	// Assign the specified name to the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.
-	Name string `json:"name"`
+	Name *string `json:"name,omitempty"`
 }
 
 // ContainerListParams defines parameters for ContainerList.
@@ -294,16 +291,20 @@ func NewContainerCreateRequestWithBody(server string, params *ContainerCreatePar
 
 	queryValues := queryURL.Query()
 
-	if queryFrag, err := runtime.StyleParamWithLocation("form", true, "name", runtime.ParamLocationQuery, params.Name); err != nil {
-		return nil, err
-	} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-		return nil, err
-	} else {
-		for k, v := range parsed {
-			for _, v2 := range v {
-				queryValues.Add(k, v2)
+	if params.Name != nil {
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "name", runtime.ParamLocationQuery, *params.Name); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
 			}
 		}
+
 	}
 
 	queryURL.RawQuery = queryValues.Encode()
@@ -531,7 +532,7 @@ type ClientWithResponsesInterface interface {
 type ContainerCreateResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON204      *[]ContainerSummary
+	JSON201      *IdResponse
 }
 
 // Status returns HTTPResponse.Status
@@ -713,12 +714,12 @@ func ParseContainerCreateResponse(rsp *http.Response) (*ContainerCreateResponse,
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
-		var dest []ContainerSummary
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IdResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON204 = &dest
+		response.JSON201 = &dest
 
 	}
 
@@ -915,9 +916,9 @@ func (w *ServerInterfaceWrapper) ContainerCreate(ctx echo.Context) error {
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ContainerCreateParams
-	// ------------- Required query parameter "name" -------------
+	// ------------- Optional query parameter "name" -------------
 
-	err = runtime.BindQueryParameter("form", true, true, "name", ctx.QueryParams(), &params.Name)
+	err = runtime.BindQueryParameter("form", true, false, "name", ctx.QueryParams(), &params.Name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter name: %s", err))
 	}
@@ -1032,29 +1033,29 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

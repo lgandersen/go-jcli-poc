@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const url = "http://localhost:8085/"
+
 type containerCreateOptions struct {
 	name       string
 	network    string
@@ -36,14 +38,43 @@ func NewContainerCreateCommand() *cobra.Command {
 	flags.BoolVar(&opts.mountDevfs, "mount.devfs", true, "Toggle devfs mount")
 	flags.StringVar(&opts.name, "name", "", "Assign a name to the container")
 	flags.StringVar(&opts.network, "network", "", "Connect a container to a network")
-	flags.StringSliceVarP(&opts.volume, "volume", "v", []string{""}, "Bind mount a volume to the container")
-	flags.StringSliceVarP(&opts.env, "env", "e", []string{""}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
-	flags.StringSliceVarP(&opts.jailParam, "jailparam", "J", []string{""}, "Specify a jail parameter (see jail(8) for details)")
+	flags.StringSliceVarP(&opts.volume, "volume", "v", []string{}, "Bind mount a volume to the container")
+	flags.StringSliceVarP(&opts.env, "env", "e", []string{}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
+	flags.StringSliceVarP(&opts.jailParam, "jailparam", "J", []string{}, "Specify a jail parameter (see jail(8) for details)")
 	return createCmd
 }
 
 func RunContainerCreate(cmd *cobra.Command, opts containerCreateOptions, args []string) {
-	fmt.Println("The container create command has been executed")
+	container_cmd := args[1:]
+	networks := []string{}
+	if opts.network != "" {
+		networks = []string{opts.network}
+	}
+	body := Openapi.ContainerCreateJSONRequestBody{
+		Cmd:       &container_cmd,
+		Env:       &opts.env,
+		Image:     &args[0],
+		JailParam: &opts.jailParam,
+		Networks:  &networks,
+	}
+	params := Openapi.ContainerCreateParams{}
+	if opts.name != "" {
+		params = Openapi.ContainerCreateParams{Name: &opts.name}
+	}
+
+	client, err := Openapi.NewClientWithResponses(url)
+	if err != nil {
+		fmt.Println("Internal error: ", err)
+		return
+	}
+
+	response, err := client.ContainerCreateWithResponse(context.TODO(), &params, body)
+	if response.StatusCode() != 201 {
+		fmt.Println("Jocker engine returned non-201 statuscode: ", response.Status())
+		return
+	}
+	container_id := response.JSON201.Id
+	fmt.Println(container_id)
 }
 
 func NewContainerRemoveCommand() *cobra.Command {
@@ -99,14 +130,16 @@ func NewContainerListCommand() *cobra.Command {
 }
 
 func RunContainerList(cmd *cobra.Command, all bool, args []string) {
-	client, err := Openapi.NewClientWithResponses("http://localhost:8085/")
+	params := Openapi.ContainerListParams{
+		All: &all,
+	}
+
+	client, err := Openapi.NewClientWithResponses(url)
 	if err != nil {
 		fmt.Println("Internal error: ", err)
 		return
 	}
-	params := Openapi.ContainerListParams{
-		All: &all,
-	}
+
 	response, err := client.ContainerListWithResponse(context.TODO(), &params)
 	if err != nil {
 		fmt.Println("Could not connect to jocker engine daemon: ", err)
