@@ -30,9 +30,13 @@ type ContainerConfig struct {
 	Env *[]string `json:"env,omitempty"`
 
 	// The name of the image to use when creating the container
-	Image     *string      `json:"image,omitempty"`
-	JailParam *interface{} `json:"jail_param,omitempty"`
-	Networks  *interface{} `json:"networks,omitempty"`
+	Image *string `json:"image,omitempty"`
+
+	// List of jail parameters (see jail(8) for details)
+	JailParam *[]string `json:"jail_param,omitempty"`
+
+	// List of networks that the container should be connected to
+	Networks *[]string `json:"networks,omitempty"`
 
 	// User that is running the specified command
 	User *string `json:"user,omitempty"`
@@ -176,8 +180,14 @@ type ClientInterface interface {
 	// ContainerList request
 	ContainerList(ctx context.Context, params *ContainerListParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ContainerDelete request
+	ContainerDelete(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ContainerStart request
 	ContainerStart(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ContainerStop request
+	ContainerStop(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ContainerCreateWithBody(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -216,8 +226,32 @@ func (c *Client) ContainerList(ctx context.Context, params *ContainerListParams,
 	return c.Client.Do(req)
 }
 
+func (c *Client) ContainerDelete(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewContainerDeleteRequest(c.Server, containerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ContainerStart(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewContainerStartRequest(c.Server, containerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ContainerStop(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewContainerStopRequest(c.Server, containerId)
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +365,40 @@ func NewContainerListRequest(server string, params *ContainerListParams) (*http.
 	return req, nil
 }
 
+// NewContainerDeleteRequest generates requests for ContainerDelete
+func NewContainerDeleteRequest(server string, containerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "container_id", runtime.ParamLocationPath, containerId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/containers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewContainerStartRequest generates requests for ContainerStart
 func NewContainerStartRequest(server string, containerId string) (*http.Request, error) {
 	var err error
@@ -348,6 +416,40 @@ func NewContainerStartRequest(server string, containerId string) (*http.Request,
 	}
 
 	operationPath := fmt.Sprintf("/containers/%s/start", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewContainerStopRequest generates requests for ContainerStop
+func NewContainerStopRequest(server string, containerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "container_id", runtime.ParamLocationPath, containerId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/containers/%s/stop", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -416,8 +518,14 @@ type ClientWithResponsesInterface interface {
 	// ContainerList request
 	ContainerListWithResponse(ctx context.Context, params *ContainerListParams, reqEditors ...RequestEditorFn) (*ContainerListResponse, error)
 
+	// ContainerDelete request
+	ContainerDeleteWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerDeleteResponse, error)
+
 	// ContainerStart request
 	ContainerStartWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerStartResponse, error)
+
+	// ContainerStop request
+	ContainerStopWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerStopResponse, error)
 }
 
 type ContainerCreateResponse struct {
@@ -464,6 +572,30 @@ func (r ContainerListResponse) StatusCode() int {
 	return 0
 }
 
+type ContainerDeleteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON204      *IdResponse
+	JSON404      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ContainerDeleteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ContainerDeleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ContainerStartResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -483,6 +615,31 @@ func (r ContainerStartResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ContainerStartResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ContainerStopResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON204      *IdResponse
+	JSON304      *ErrorResponse
+	JSON404      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ContainerStopResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ContainerStopResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -515,6 +672,15 @@ func (c *ClientWithResponses) ContainerListWithResponse(ctx context.Context, par
 	return ParseContainerListResponse(rsp)
 }
 
+// ContainerDeleteWithResponse request returning *ContainerDeleteResponse
+func (c *ClientWithResponses) ContainerDeleteWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerDeleteResponse, error) {
+	rsp, err := c.ContainerDelete(ctx, containerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseContainerDeleteResponse(rsp)
+}
+
 // ContainerStartWithResponse request returning *ContainerStartResponse
 func (c *ClientWithResponses) ContainerStartWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerStartResponse, error) {
 	rsp, err := c.ContainerStart(ctx, containerId, reqEditors...)
@@ -522,6 +688,15 @@ func (c *ClientWithResponses) ContainerStartWithResponse(ctx context.Context, co
 		return nil, err
 	}
 	return ParseContainerStartResponse(rsp)
+}
+
+// ContainerStopWithResponse request returning *ContainerStopResponse
+func (c *ClientWithResponses) ContainerStopWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerStopResponse, error) {
+	rsp, err := c.ContainerStop(ctx, containerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseContainerStopResponse(rsp)
 }
 
 // ParseContainerCreateResponse parses an HTTP response from a ContainerCreateWithResponse call
@@ -576,6 +751,46 @@ func ParseContainerListResponse(rsp *http.Response) (*ContainerListResponse, err
 	return response, nil
 }
 
+// ParseContainerDeleteResponse parses an HTTP response from a ContainerDeleteWithResponse call
+func ParseContainerDeleteResponse(rsp *http.Response) (*ContainerDeleteResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ContainerDeleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON204 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseContainerStartResponse parses an HTTP response from a ContainerStartWithResponse call
 func ParseContainerStartResponse(rsp *http.Response) (*ContainerStartResponse, error) {
 	bodyBytes, err := ioutil.ReadAll(rsp.Body)
@@ -623,6 +838,53 @@ func ParseContainerStartResponse(rsp *http.Response) (*ContainerStartResponse, e
 	return response, nil
 }
 
+// ParseContainerStopResponse parses an HTTP response from a ContainerStopWithResponse call
+func ParseContainerStopResponse(rsp *http.Response) (*ContainerStopResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ContainerStopResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON204 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 304:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON304 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Create a container
@@ -631,9 +893,15 @@ type ServerInterface interface {
 	// List containers
 	// (GET /containers/list)
 	ContainerList(ctx echo.Context, params ContainerListParams) error
+	// Remove a container
+	// (DELETE /containers/{container_id})
+	ContainerDelete(ctx echo.Context, containerId string) error
 	// Start a container
 	// (POST /containers/{container_id}/start)
 	ContainerStart(ctx echo.Context, containerId string) error
+	// Stop a container
+	// (POST /containers/{container_id}/stop)
+	ContainerStop(ctx echo.Context, containerId string) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -677,6 +945,22 @@ func (w *ServerInterfaceWrapper) ContainerList(ctx echo.Context) error {
 	return err
 }
 
+// ContainerDelete converts echo context to params.
+func (w *ServerInterfaceWrapper) ContainerDelete(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "container_id" -------------
+	var containerId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "container_id", runtime.ParamLocationPath, ctx.Param("container_id"), &containerId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter container_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.ContainerDelete(ctx, containerId)
+	return err
+}
+
 // ContainerStart converts echo context to params.
 func (w *ServerInterfaceWrapper) ContainerStart(ctx echo.Context) error {
 	var err error
@@ -690,6 +974,22 @@ func (w *ServerInterfaceWrapper) ContainerStart(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshalled arguments
 	err = w.Handler.ContainerStart(ctx, containerId)
+	return err
+}
+
+// ContainerStop converts echo context to params.
+func (w *ServerInterfaceWrapper) ContainerStop(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "container_id" -------------
+	var containerId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "container_id", runtime.ParamLocationPath, ctx.Param("container_id"), &containerId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter container_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.ContainerStop(ctx, containerId)
 	return err
 }
 
@@ -723,34 +1023,38 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	router.POST(baseURL+"/containers/create", wrapper.ContainerCreate)
 	router.GET(baseURL+"/containers/list", wrapper.ContainerList)
+	router.DELETE(baseURL+"/containers/:container_id", wrapper.ContainerDelete)
 	router.POST(baseURL+"/containers/:container_id/start", wrapper.ContainerStart)
+	router.POST(baseURL+"/containers/:container_id/stop", wrapper.ContainerStop)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
@@ -824,3 +1128,4 @@ func GetSwagger() (swagger *openapi3.T, err error) {
 	}
 	return
 }
+
