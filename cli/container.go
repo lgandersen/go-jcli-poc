@@ -107,16 +107,21 @@ func RunContainerRemove(cmd *cobra.Command, args []string) {
 		fmt.Println("no such container")
 	case status_code == 500:
 		fmt.Println("internal server error")
+	default:
+		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
 	}
 }
 
 func NewContainerStartCommand() *cobra.Command {
 	var attach bool
 	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Start one or more stopped containers",
+		Use:                   "start [OPTIONS] CONTAINER [CONTAINER...]",
+		Short:                 "Start one or more stopped containers",
+		Long:                  "Start one or more stopped containers. Attach to STDOUT/STDERR if only one container is started",
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("The container rm command has been executed")
+			RunContainerStart(cmd, &attach, args)
 		},
 	}
 
@@ -124,15 +129,82 @@ func NewContainerStartCommand() *cobra.Command {
 	return cmd
 }
 
+func RunContainerStart(cmd *cobra.Command, attach *bool, args []string) {
+	if *attach {
+		if len(args) == 1 {
+			fmt.Println("Implement 'container start' with attachment enabled ", *attach, "args ", args)
+		} else {
+			fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
+		}
+	} else {
+		client := NewHTTPClient()
+		for _, container := range args {
+			StartSingleContainer(client, container)
+		}
+
+	}
+}
+
+func StartSingleContainer(client *Openapi.ClientWithResponses, container string) {
+	response, err := client.ContainerStartWithResponse(context.TODO(), container)
+	status_code := response.StatusCode()
+	switch {
+	case err != nil:
+		fmt.Println("error requesting container start: ", err)
+
+	case status_code == 200 && response.JSON200 == nil:
+		fmt.Println("could not parse jocker engine response")
+
+	case status_code == 200:
+		fmt.Println(response.JSON200.Id)
+
+	case status_code == 304:
+		fmt.Println("container already started")
+
+	case status_code == 404:
+		fmt.Println("no such container")
+
+	case status_code == 500:
+		fmt.Println("internal server error")
+
+	default:
+		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
+	}
+}
+
 func NewContainerStopCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop one or more running containers",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("The container stop command has been executed")
+			RunContainerStop(cmd, args)
 		},
 	}
 	return cmd
+}
+
+func RunContainerStop(cmd *cobra.Command, args []string) {
+	name_or_id := args[0]
+	client := NewHTTPClient()
+	response, _ := client.ContainerStopWithResponse(context.TODO(), name_or_id)
+	status_code := response.StatusCode()
+
+	switch {
+	case status_code == 204:
+		fmt.Println("stopped ", response.JSON204.Id)
+
+	case status_code == 304:
+		fmt.Println("container already stopped")
+
+	case status_code == 404:
+		fmt.Println("no such container")
+
+	case status_code == 500:
+		fmt.Println("internal server error")
+
+	default:
+		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
+	}
 }
 
 func NewContainerListCommand() *cobra.Command {
