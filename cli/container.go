@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -13,68 +14,72 @@ import (
 
 const url = "http://localhost:8085/"
 
-type containerCreateOptions struct {
-	name       string
-	network    string
-	mountDevfs bool
-	env        []string
-	volume     []string
-	jailParam  []string
+func NewContainerCommand() *cobra.Command {
+	containerCmd := &cobra.Command{
+		Use:                   "container",
+		Short:                 "Manage containers",
+		Long:                  `Manage containers loooong`,
+		DisableFlagsInUseLine: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("The container main command have been executed")
+		},
+	}
+
+	containerCmd.AddCommand(NewContainerCreateCommand())
+	containerCmd.AddCommand(NewContainerRemoveCommand())
+	containerCmd.AddCommand(NewContainerStartCommand())
+	containerCmd.AddCommand(NewContainerStopCommand())
+	containerCmd.AddCommand(NewContainerListCommand())
+	return containerCmd
 }
 
 func NewContainerCreateCommand() *cobra.Command {
-	opts := containerCreateOptions{}
+	config := Openapi.ContainerCreateJSONRequestBody{
+		Networks:  &([]string{}),
+		Volumes:   &([]string{}),
+		Env:       &([]string{}),
+		JailParam: &([]string{}),
+	}
+
+	var name string
 
 	createCmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new container",
 		Long:  `Create a new container loooong`,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerCreate(cmd, opts, args)
+			RunContainerCreate(cmd, &name, config, args)
 		},
 	}
 
 	flags := createCmd.Flags()
-	flags.BoolVar(&opts.mountDevfs, "mount.devfs", true, "Toggle devfs mount")
-	flags.StringVar(&opts.name, "name", "", "Assign a name to the container")
-	flags.StringVar(&opts.network, "network", "", "Connect a container to a network")
-	flags.StringSliceVarP(&opts.volume, "volume", "v", []string{}, "Bind mount a volume to the container")
-	flags.StringSliceVarP(&opts.env, "env", "e", []string{}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
-	flags.StringSliceVarP(&opts.jailParam, "jailparam", "J", []string{}, "Specify a jail parameter (see jail(8) for details)")
+	flags.StringVar(&name, "name", "", "Assign a name to the container")
+	flags.StringSliceVar(config.Networks, "network", []string{}, "Connect a container to a network")
+	flags.StringSliceVarP(config.Volumes, "volume", "v", []string{}, "Bind mount a volume to the container")
+	flags.StringSliceVarP(config.Env, "env", "e", []string{}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
+	flags.StringSliceVarP(config.JailParam, "jailparam", "J", []string{"mount.devfs"}, "Specify a jail parameter (see jail(8) for details)")
 	return createCmd
 }
 
-func RunContainerCreate(cmd *cobra.Command, opts containerCreateOptions, args []string) {
+func RunContainerCreate(cmd *cobra.Command, name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) {
 	container_cmd := args[1:]
-	networks := []string{}
-	if opts.network != "" {
-		networks = []string{opts.network}
-	}
-	body := Openapi.ContainerCreateJSONRequestBody{
-		Cmd:       &container_cmd,
-		Env:       &opts.env,
-		Image:     &args[0],
-		JailParam: &opts.jailParam,
-		Networks:  &networks,
-	}
+	image := args[0]
+	body.Cmd = &container_cmd
+	body.Image = &image
+
 	params := Openapi.ContainerCreateParams{}
-	if opts.name != "" {
-		params = Openapi.ContainerCreateParams{Name: &opts.name}
+	if *name != "" {
+		params = Openapi.ContainerCreateParams{Name: name}
 	}
 
-	client, err := Openapi.NewClientWithResponses(url)
-	if err != nil {
-		fmt.Println("Internal error: ", err)
-		return
-	}
+	client := NewHTTPClient()
 
-	response, err := client.ContainerCreateWithResponse(context.TODO(), &params, body)
+	response, _ := client.ContainerCreateWithResponse(context.TODO(), &params, body)
 	if response.StatusCode() != 201 {
-		fmt.Println("Jocker engine returned non-201 statuscode: ", response.Status())
-		return
+		fmt.Println("Jocker engine returned unsuccesful statuscode: ", response.Status())
+		os.Exit(0)
 	}
-	container_id := response.JSON201.Id
-	fmt.Println(container_id)
+	fmt.Println(response.JSON201.Id)
 }
 
 func NewContainerRemoveCommand() *cobra.Command {
@@ -83,10 +88,26 @@ func NewContainerRemoveCommand() *cobra.Command {
 		Short: "Remove one or more containers",
 		Long:  `Remove one or more containers loooong`,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("The container rm command has been executed")
+			RunContainerRemove(cmd, args)
 		},
 	}
 	return removeCmd
+}
+
+func RunContainerRemove(cmd *cobra.Command, args []string) {
+	container_id := args[0]
+	client := NewHTTPClient()
+	response, _ := client.ContainerDeleteWithResponse(context.TODO(), container_id)
+	status_code := response.StatusCode()
+
+	switch {
+	case status_code == 204:
+		fmt.Println("succesfully removed container")
+	case status_code == 404:
+		fmt.Println("no such container")
+	case status_code == 500:
+		fmt.Println("internal server error")
+	}
 }
 
 func NewContainerStartCommand() *cobra.Command {
@@ -134,11 +155,7 @@ func RunContainerList(cmd *cobra.Command, all bool, args []string) {
 		All: &all,
 	}
 
-	client, err := Openapi.NewClientWithResponses(url)
-	if err != nil {
-		fmt.Println("Internal error: ", err)
-		return
-	}
+	client := NewHTTPClient()
 
 	response, err := client.ContainerListWithResponse(context.TODO(), &params)
 	if err != nil {
@@ -185,6 +202,15 @@ func PrintContainerList(container_list *[]Openapi.ContainerSummary) {
 	}
 }
 
+func NewHTTPClient() *Openapi.ClientWithResponses {
+	client, err := Openapi.NewClientWithResponses(url)
+	if err != nil {
+		fmt.Println("Internal error: ", err)
+		os.Exit(1)
+	}
+	return client
+}
+
 // HumanDuration returns a human-readable approximation of a duration
 // (eg. "About a minute", "4 hours ago", etc.).
 func HumanDuration(d time.Duration) string {
@@ -215,7 +241,7 @@ func HumanDuration(d time.Duration) string {
 func Cell(word string, max_len int) string {
 	word_length := len(word)
 
-	if word_length < max_len {
+	if word_length <= max_len {
 		return word + Sp(max_len-word_length) + Sp(2)
 	} else {
 		return word[:max_len] + ".."
@@ -224,23 +250,4 @@ func Cell(word string, max_len int) string {
 
 func Sp(n int) string {
 	return strings.Repeat(" ", n)
-}
-
-func NewContainerCommand() *cobra.Command {
-	containerCmd := &cobra.Command{
-		Use:                   "container",
-		Short:                 "Manage containers",
-		Long:                  `Manage containers loooong`,
-		DisableFlagsInUseLine: true,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("The container main command have been executed")
-		},
-	}
-
-	containerCmd.AddCommand(NewContainerCreateCommand())
-	containerCmd.AddCommand(NewContainerRemoveCommand())
-	containerCmd.AddCommand(NewContainerStartCommand())
-	containerCmd.AddCommand(NewContainerStopCommand())
-	containerCmd.AddCommand(NewContainerListCommand())
-	return containerCmd
 }
