@@ -3,16 +3,21 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
 	Openapi "jcli/client"
 
+	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 )
 
 const url = "http://localhost:8085/"
+const ws = "ws://localhost:8085/containers/%s/attach"
+const succesful_ws_exit = "websocket: close 1000 (normal): exit:"
 
 func NewContainerCommand() *cobra.Command {
 	containerCmd := &cobra.Command{
@@ -132,20 +137,84 @@ func NewContainerStartCommand() *cobra.Command {
 func RunContainerStart(cmd *cobra.Command, attach *bool, args []string) {
 	if *attach {
 		if len(args) == 1 {
-			fmt.Println("Implement 'container start' with attachment enabled ", *attach, "args ", args)
+			StartAndAttachToContainer(attach, args[0])
 		} else {
 			fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
 		}
 	} else {
 		client := NewHTTPClient()
+		var container_id string
 		for _, container := range args {
-			StartSingleContainer(client, container)
+			container_id = StartSingleContainer(client, container)
+			if container_id != "" {
+				fmt.Println(container_id)
+			}
 		}
-
 	}
 }
 
-func StartSingleContainer(client *Openapi.ClientWithResponses, container string) {
+func StartAndAttachToContainer(attach *bool, container_id string) {
+	endpoint := fmt.Sprintf(ws, container_id)
+	c, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		log.Fatal("dial:", err)
+	}
+	defer c.Close()
+
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	done := make(chan struct{})
+
+	go ListenForWSMessages(done, c)
+	StartSingleContainer(NewHTTPClient(), container_id)
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-interrupt:
+			fmt.Println("Interrupted by user")
+			TryGracefulWSDisconnectconnect(done, c)
+			return
+		}
+	}
+}
+
+func ListenForWSMessages(done chan struct{}, c *websocket.Conn) {
+	defer close(done)
+	for {
+		_, message, err := c.ReadMessage()
+		if err != nil {
+			if strings.HasPrefix(err.Error(), succesful_ws_exit) {
+				fmt.Println(err.Error()[len(succesful_ws_exit):])
+			} else {
+				fmt.Println("websocket closed unexpectedly:", err.Error())
+			}
+			return
+		}
+		msg := string(message)
+		if msg[:3] == "ok:" {
+			// First message receieved when the ws is succesfully established.
+			continue
+		}
+		if msg[:3] == "io:" {
+			fmt.Print(msg[3:])
+		}
+	}
+}
+
+func TryGracefulWSDisconnectconnect(done chan struct{}, c *websocket.Conn) {
+	_ = c.WriteMessage(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+	)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
+}
+
+func StartSingleContainer(client *Openapi.ClientWithResponses, container string) string {
 	response, err := client.ContainerStartWithResponse(context.TODO(), container)
 	status_code := response.StatusCode()
 	switch {
@@ -156,7 +225,7 @@ func StartSingleContainer(client *Openapi.ClientWithResponses, container string)
 		fmt.Println("could not parse jocker engine response")
 
 	case status_code == 200:
-		fmt.Println(response.JSON200.Id)
+		return response.JSON200.Id
 
 	case status_code == 304:
 		fmt.Println("container already started")
@@ -170,6 +239,7 @@ func StartSingleContainer(client *Openapi.ClientWithResponses, container string)
 	default:
 		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
 	}
+	return ""
 }
 
 func NewContainerStopCommand() *cobra.Command {
