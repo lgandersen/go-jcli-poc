@@ -23,7 +23,7 @@ func NewContainerCommand() *cobra.Command {
 	containerCmd := &cobra.Command{
 		Use:                   "container",
 		Short:                 "Manage containers",
-		Long:                  `Manage containers loooong`,
+		Long:                  `Manage containers`,
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("The container main command have been executed")
@@ -51,7 +51,7 @@ func NewContainerCreateCommand() *cobra.Command {
 	createCmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new container",
-		Long:  `Create a new container loooong`,
+		Long:  `Create a new container`,
 		Run: func(cmd *cobra.Command, args []string) {
 			RunContainerCreate(cmd, &name, config, args)
 		},
@@ -285,14 +285,14 @@ func NewContainerListCommand() *cobra.Command {
 		Short: "List containers",
 		Long:  `List containers loooong`,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerList(cmd, all, args)
+			RunContainerList(all, args)
 		},
 	}
 	listCmd.Flags().BoolVarP(&all, "all", "a", false, "Show all containers (default shows just running)")
 	return listCmd
 }
 
-func RunContainerList(cmd *cobra.Command, all bool, args []string) {
+func RunContainerList(all bool, args []string) {
 	params := Openapi.ContainerListParams{
 		All: &all,
 	}

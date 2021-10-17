@@ -9,4 +9,6 @@ require (
 	github.com/labstack/echo/v4 v4.2.1
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
+	gotest.tools v2.2.0+incompatible
+	gotest.tools/v3 v3.0.3
 )
