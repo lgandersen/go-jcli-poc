@@ -1,98 +1,64 @@
 package cli
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"log"
-	"os"
-	"os/exec"
+	Openapi "jcli/client"
 	"testing"
-	"time"
 
 	"gotest.tools/assert"
 )
 
-func TestInitializationAndJockerEngineStartup(t *testing.T) {
-	RecreateJockerZroot(t)
-	stdout, cmd := InitJockerEngine(t)
-	ShutdownJockerEngine(cmd, stdout)
+func TestContainerListSubCommand(t *testing.T) {
+	t.Run("list container expecting empty list", ContainerListExpectEmptyListing)
+	t.Run("create container named testerer", ContainerAddTesterer)
+	t.Run("list container expecting testerer container", ContainerListExpectTesterer)
+	t.Run("remove container named testerer", ContainerRemoveTesterer)
+	t.Run("list container expecting empty list", ContainerListExpectEmptyListing)
 }
 
-func TestContainerSubCommand(t *testing.T) {
-	RecreateJockerZroot(t)
-	stdout, cmd := InitJockerEngine(t)
-	//ContainerListTest(t)
-	t.Run("Testing list container", ContainerListTest)
-	ShutdownJockerEngine(cmd, stdout)
-}
+var testerer_container_id *string
 
-func ContainerListTest(t *testing.T) {
+func ContainerListExpectEmptyListing(t *testing.T) {
 	all := true
-	args := []string{}
-	cli_out := RunCommandCollectStdOut(func() { RunContainerList(all, args) })
-	expected_out := "CONTAINER ID       IMAGE                 COMMAND                       CREATED                  STATUS        NAME\n"
-	if cli_out != expected_out {
-		t.Errorf("client output != expected output.\nCilent: %s\nExpected: %s", cli_out, expected_out)
-	}
+	response, err := GetContainerList(all)
+	assert.NilError(t, err)
+	assert.Assert(t, response.JSON200 != nil)
+	assert.Equal(t, len(*response.JSON200), 0)
 }
 
-func RunCommandCollectStdOut(f func()) string {
-	old_stdout := os.Stdout // keep backup of the real stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	outC := make(chan string)
-
-	f()
-
-	go func() {
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-		outC <- buf.String()
-	}()
-
-	w.Close()
-	os.Stdout = old_stdout
-	output := <-outC
-
-	fmt.Println(" === BEGIN JCLI OUTPUT ===")
-	fmt.Print(string(output))
-	fmt.Println("\n === END JCLI OUTPUT ===")
-	return string(output)
+func ContainerAddTesterer(t *testing.T) {
+	config := Openapi.ContainerCreateJSONRequestBody{
+		Networks:  &([]string{}),
+		Volumes:   &([]string{}),
+		Env:       &([]string{}),
+		JailParam: &([]string{}),
+	}
+	name := "testerer"
+	args := []string{"base", "/bin/ls"}
+	response, err := PostContainerCreate(&name, config, args)
+	assert.NilError(t, err)
+	var empty_json201 *Openapi.IdResponse
+	assert.Assert(t, response.JSON201 != empty_json201)
+	assert.Equal(t, len(response.JSON201.Id), 12)
+	testerer_container_id = &response.JSON201.Id
 }
 
-const jocker_zroot = "zroot/jocker"
-const jocker_engine_path = "/home/vagrant/jocker/"
-
-func RecreateJockerZroot(t *testing.T) {
-	exec.Command("/bin/sh", "-c", "sudo /sbin/zfs destroy -rf "+jocker_zroot).Run()
-	exec.Command("/bin/sh", "-c", "sudo /sbin/zfs create "+jocker_zroot).Run()
+func ContainerListExpectTesterer(t *testing.T) {
+	all := true
+	response, err := GetContainerList(all)
+	assert.NilError(t, err)
+	assert.Assert(t, response.JSON200 != nil)
+	assert.Equal(t, len(*response.JSON200), 1)
+	container_list := *response.JSON200
+	assert.Equal(t, *container_list[0].Name, "testerer")
 }
 
-func InitJockerEngine(t *testing.T) (io.ReadCloser, *exec.Cmd) {
-	cmd := exec.Command("/usr/local/bin/sudo", jocker_engine_path+"_build/dev/rel/jockerd/bin/jockerd", "start")
-	stdout, err := cmd.StdoutPipe()
-	assert.Assert(t, err == nil)
-	err = cmd.Start()
-	if err != nil {
-		log.Fatal(err)
-		assert.Assert(t, false)
-	}
-	time.Sleep(3 * time.Second)
-	return stdout, cmd
-}
-
-func ShutdownJockerEngine(cmd *exec.Cmd, jockerd_stdout io.ReadCloser) {
-	pid := cmd.Process.Pid
-	err := exec.Command("/bin/kill", fmt.Sprint(pid)).Run()
-	if err != nil {
-		log.Fatal(err)
-	}
-	output, err := io.ReadAll(jockerd_stdout)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(" === BEGIN JOCKER ENGINE OUTPUT ===")
-	fmt.Print(string(output))
-	fmt.Println("\n === END JOCKER ENGINE OUTPUT ===")
+func ContainerRemoveTesterer(t *testing.T) {
+	args := []string{"testerer"}
+	response, err := PostContainerRemove(args)
+	assert.NilError(t, err)
+	var empty_id_response *Openapi.IdResponse
+	assert.Assert(t, empty_id_response != response.JSON200)
+	var id string
+	id = (*response.JSON200).Id
+	assert.Equal(t, id, *testerer_container_id)
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -67,6 +68,13 @@ func NewContainerCreateCommand() *cobra.Command {
 }
 
 func RunContainerCreate(cmd *cobra.Command, name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) {
+	response, err := PostContainerCreate(name, body, args)
+	if err == nil {
+		fmt.Println(response.JSON201.Id)
+	}
+}
+
+func PostContainerCreate(name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) (*Openapi.ContainerCreateResponse, error) {
 	container_cmd := args[1:]
 	image := args[0]
 	body.Cmd = &container_cmd
@@ -79,12 +87,17 @@ func RunContainerCreate(cmd *cobra.Command, name *string, body Openapi.Container
 
 	client := NewHTTPClient()
 
-	response, _ := client.ContainerCreateWithResponse(context.TODO(), &params, body)
+	response, err := client.ContainerCreateWithResponse(context.TODO(), &params, body)
+	if err != nil {
+		fmt.Println("Could not connect to jocker engine daemon: ", err)
+		return response, err
+	}
+
 	if response.StatusCode() != 201 {
 		fmt.Println("Jocker engine returned unsuccesful statuscode: ", response.Status())
-		os.Exit(0)
+		return response, errors.New("non-200 statuscode")
 	}
-	fmt.Println(response.JSON201.Id)
+	return response, nil
 }
 
 func NewContainerRemoveCommand() *cobra.Command {
@@ -100,20 +113,28 @@ func NewContainerRemoveCommand() *cobra.Command {
 }
 
 func RunContainerRemove(cmd *cobra.Command, args []string) {
+	response, err := PostContainerRemove(args)
+	if err == nil {
+		fmt.Println(response.JSON200.Id)
+	}
+}
+
+func PostContainerRemove(args []string) (*Openapi.ContainerDeleteResponse, error) {
 	container_id := args[0]
 	client := NewHTTPClient()
 	response, _ := client.ContainerDeleteWithResponse(context.TODO(), container_id)
 	status_code := response.StatusCode()
 
 	switch {
-	case status_code == 204:
-		fmt.Println("succesfully removed container")
+	case status_code == 200:
+		//fmt.Println("succesfully removed container")
+		return response, nil
 	case status_code == 404:
-		fmt.Println("no such container")
+		return response, errors.New("no such container")
 	case status_code == 500:
-		fmt.Println("internal server error")
+		return response, errors.New("internal server error")
 	default:
-		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
+		return response, errors.New("unknown status-code received from jocker engine: " + response.Status())
 	}
 }
 
@@ -293,6 +314,13 @@ func NewContainerListCommand() *cobra.Command {
 }
 
 func RunContainerList(all bool, args []string) {
+	response, err := GetContainerList(all)
+	if err == nil {
+		PrintContainerList(response.JSON200)
+	}
+}
+
+func GetContainerList(all bool) (*Openapi.ContainerListResponse, error) {
 	params := Openapi.ContainerListParams{
 		All: &all,
 	}
@@ -302,14 +330,14 @@ func RunContainerList(all bool, args []string) {
 	response, err := client.ContainerListWithResponse(context.TODO(), &params)
 	if err != nil {
 		fmt.Println("Could not connect to jocker engine daemon: ", err)
-		return
+		return response, err
 	}
 
 	if response.StatusCode() != 200 {
 		fmt.Println("Jocker engine returned non-200 statuscode: ", response.Status())
-		return
+		return response, errors.New("non-200 statuscode")
 	}
-	PrintContainerList(response.JSON200)
+	return response, nil
 }
 
 func PrintContainerList(container_list *[]Openapi.ContainerSummary) {
