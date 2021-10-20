@@ -147,7 +147,7 @@ func NewContainerStartCommand() *cobra.Command {
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerStart(cmd, &attach, args)
+			RunContainerStart(&attach, args)
 		},
 	}
 
@@ -155,26 +155,35 @@ func NewContainerStartCommand() *cobra.Command {
 	return cmd
 }
 
-func RunContainerStart(cmd *cobra.Command, attach *bool, args []string) {
+func RunContainerStart(attach *bool, args []string) {
 	if *attach {
-		if len(args) == 1 {
-			StartAndAttachToContainer(attach, args[0])
-		} else {
-			fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
-		}
+		StartAndAttachToContainer(attach, args)
 	} else {
-		client := NewHTTPClient()
-		var container_id string
-		for _, container := range args {
-			container_id = StartSingleContainer(client, container)
-			if container_id != "" {
-				fmt.Println(container_id)
-			}
-		}
+		StartSeveralContainers(args)
 	}
 }
 
-func StartAndAttachToContainer(attach *bool, container_id string) {
+func StartSeveralContainers(args []string) []string {
+	client := NewHTTPClient()
+	container_ids := make([]string, len(args))
+	var container_id string
+	for i, container := range args {
+		container_id = StartSingleContainer(client, container)
+		container_ids[i] = container_id
+		if container_id != "" {
+			fmt.Println(container_id)
+		}
+	}
+	return container_ids
+}
+
+func StartAndAttachToContainer(attach *bool, args []string) {
+	if len(args) != 1 {
+		fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
+		return
+	}
+
+	container_id := args[0]
 	endpoint := fmt.Sprintf(ws, container_id)
 	c, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
 	if err != nil {
@@ -275,26 +284,37 @@ func NewContainerStopCommand() *cobra.Command {
 }
 
 func RunContainerStop(cmd *cobra.Command, args []string) {
+	response, err := ContainerStop(args)
+	if err != nil {
+		fmt.Println(response.JSON200.Id)
+	}
+}
+
+func ContainerStop(args []string) (*Openapi.ContainerStopResponse, error) {
 	name_or_id := args[0]
 	client := NewHTTPClient()
-	response, _ := client.ContainerStopWithResponse(context.TODO(), name_or_id)
+	response, err := client.ContainerStopWithResponse(context.TODO(), name_or_id)
+	if err != nil {
+		return response, err
+	}
+
 	status_code := response.StatusCode()
 
 	switch {
-	case status_code == 204:
-		fmt.Println("stopped ", response.JSON204.Id)
+	case status_code == 200:
+		return response, nil
 
 	case status_code == 304:
-		fmt.Println("container already stopped")
+		return response, errors.New("container already stopped")
 
 	case status_code == 404:
-		fmt.Println("no such container")
+		return response, errors.New("no such container")
 
 	case status_code == 500:
-		fmt.Println("internal server error")
+		return response, errors.New("internal server error")
 
 	default:
-		fmt.Println("unknown status-code received from jocker engine: ", response.Status())
+		return response, errors.New("unknown status-code received from jocker engine: " + string(response.Status()))
 	}
 }
 
