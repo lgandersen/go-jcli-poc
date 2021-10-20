@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	Openapi "jcli/client"
 	"os"
@@ -15,21 +16,40 @@ var testerer_container_id *string
 
 func TestContainerCreateListRemove(t *testing.T) {
 	var container_id string
-	t.Run("list container expecting empty list", ContainerListExpectEmptyListing)
+	var all = true
+	t.Run("list container expecting empty list", ContainerListExpectEmptyListing(all))
 	t.Run("create a new container", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
-	t.Run("verify that the container is being listed", ContainerListExpectContainer(t, "testerer"))
+	t.Run("verify that the container is NOT being listed, with all set to false", ContainerListExpectEmptyListing(!all))
+	t.Run("verify that the container is being listed, with all set to true", ContainerListExpectContainer(all, "testerer"))
 	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
-	t.Run("list container expecting empty list again", ContainerListExpectEmptyListing)
+	t.Run("list container expecting empty list again", ContainerListExpectEmptyListing(all))
 }
 
-func TestContainerCreateStartRemove(t *testing.T) {
+func TestContainerStartingAndStopping(t *testing.T) {
 	var container_id string
-	t.Run("create container that sleeps when started", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
-	t.Run("start container", StartContainer("testerer"))
-	VerifyRunningContainer(t, container_id)
+	var attach = false
+	var list_all = false
+	t.Run("create a container that sleeps when started", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
+	t.Run("start container", StartContainer("testerer", attach))
+	t.Run("verify that the container is running", VerifyRunningContainer(container_id))
+	t.Run("check that running container is listed when 'all' is false", ContainerListExpectContainer(list_all, "testerer"))
 	t.Run("stop container", StopContainer("testerer"))
 	t.Run("verify container is stopped", VerifyStoppedContainer(container_id))
 	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+}
+
+func TestContainerAttachAndStart(t *testing.T) {
+	var container_id string
+	var attach = true
+	t.Run("create a new container", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
+	stdout := RunCommandCollectStdOut(func() { StartContainer("testerer", attach)(t) })
+	expected_stdout := fmt.Sprintf(".cshrc\n.profile\nCOPYRIGHT\nbin\nboot\ndev\netc\nlib\nlibexec\nmedia\nmnt\nnet\nproc\nrescue\nroot\nsbin\nsys\ntmp\nusr\nvar\ncontainer %s stopped\n", container_id)
+	assert.Equal(t, stdout, expected_stdout)
+	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+}
+
+func TestContainerReferencingFunctionality(t *testing.T) {
+	//FIXME
 }
 
 func StopContainer(container_id string) func(t *testing.T) {
@@ -40,11 +60,15 @@ func StopContainer(container_id string) func(t *testing.T) {
 	}
 }
 
-func StartContainer(container_id string) func(*testing.T) {
+func StartContainer(container_id string, attach bool) func(*testing.T) {
 	return func(t *testing.T) {
-		container_ids := StartSeveralContainers([]string{container_id})
-		container_id_returned := container_ids[0]
-		assert.Equal(t, len(container_id_returned), 12)
+		if attach {
+			StartAndAttachToContainer([]string{container_id})
+		} else {
+			container_ids := StartSeveralContainers([]string{container_id})
+			container_id_returned := container_ids[0]
+			assert.Equal(t, len(container_id_returned), 12)
+		}
 	}
 }
 
@@ -57,25 +81,27 @@ func VerifyStoppedContainer(container_id string) func(*testing.T) {
 	}
 }
 
-func VerifyRunningContainer(t *testing.T, container_id string) {
-	cmd := exec.Command("/bin/sh", "-c", "jls | grep "+container_id)
-	err := cmd.Run()
-	// If the container exists, grepping after the id will result in non-empty output from grep
-	// which in turn results in exitcode 0 (non-zero if empty result from grep)
-	assert.NilError(t, err)
-}
-
-func ContainerListExpectEmptyListing(t *testing.T) {
-	all := true
-	response, err := GetContainerList(all)
-	assert.NilError(t, err)
-	assert.Assert(t, response.JSON200 != nil)
-	assert.Equal(t, len(*response.JSON200), 0)
-}
-
-func ContainerListExpectContainer(t *testing.T, container_name string) func(*testing.T) {
+func VerifyRunningContainer(container_id string) func(t *testing.T) {
 	return func(t *testing.T) {
-		all := true
+		cmd := exec.Command("/bin/sh", "-c", "jls | grep "+container_id)
+		err := cmd.Run()
+		// If the container exists, grepping after the id will result in non-empty output from grep
+		// which in turn results in exitcode 0 (non-zero if empty result from grep)
+		assert.NilError(t, err)
+	}
+}
+
+func ContainerListExpectEmptyListing(all bool) func(*testing.T) {
+	return func(t *testing.T) {
+		response, err := GetContainerList(all)
+		assert.NilError(t, err)
+		assert.Assert(t, response.JSON200 != nil)
+		assert.Equal(t, len(*response.JSON200), 0)
+	}
+}
+
+func ContainerListExpectContainer(all bool, container_name string) func(*testing.T) {
+	return func(t *testing.T) {
 		response, err := GetContainerList(all)
 		assert.NilError(t, err)
 		assert.Assert(t, response.JSON200 != nil)

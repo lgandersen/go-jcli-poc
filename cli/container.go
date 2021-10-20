@@ -157,7 +157,7 @@ func NewContainerStartCommand() *cobra.Command {
 
 func RunContainerStart(attach *bool, args []string) {
 	if *attach {
-		StartAndAttachToContainer(attach, args)
+		StartAndAttachToContainer(args)
 	} else {
 		StartSeveralContainers(args)
 	}
@@ -177,7 +177,7 @@ func StartSeveralContainers(args []string) []string {
 	return container_ids
 }
 
-func StartAndAttachToContainer(attach *bool, args []string) {
+func StartAndAttachToContainer(args []string) {
 	if len(args) != 1 {
 		fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
 		return
