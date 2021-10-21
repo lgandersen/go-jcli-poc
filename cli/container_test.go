@@ -49,7 +49,15 @@ func TestContainerAttachAndStart(t *testing.T) {
 }
 
 func TestContainerReferencingFunctionality(t *testing.T) {
-	//FIXME
+	// FIXME: "try stopping a container that is already stopped"
+	var container_id string
+	var attach = false
+	t.Run("create a container that sleeps when started", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
+	t.Run("start container using container id", StartContainer(container_id, attach))
+	t.Run("stop container using container id", StopContainer(container_id))
+	t.Run("start container using first part of the container id", StartContainer(container_id[:8], attach))
+	t.Run("stop container using first part of the container id", StopContainer(container_id[:8]))
+	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
 }
 
 func StopContainer(container_id string) func(t *testing.T) {
