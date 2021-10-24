@@ -81,6 +81,33 @@ type IdResponse struct {
 	Id string `json:"id"`
 }
 
+// the image metadata
+type Image struct {
+	// Default command used when creating a container from this image
+	Command *[]string `json:"command,omitempty"`
+
+	// When the image was created
+	Created *string `json:"created,omitempty"`
+
+	// List of environment variables and their values to set before running command.
+	EnvVars *[]string `json:"env_vars,omitempty"`
+
+	// The id of the image
+	Id *string `json:"id,omitempty"`
+
+	// Id of the layer containing the image
+	LayerId *string `json:"layer_id,omitempty"`
+
+	// Name of the image
+	Name *string `json:"name,omitempty"`
+
+	// Tag of the image
+	Tag *string `json:"tag,omitempty"`
+
+	// user used when executing the command
+	User *string `json:"user,omitempty"`
+}
+
 // ContainerCreateJSONBody defines parameters for ContainerCreate.
 type ContainerCreateJSONBody ContainerConfig
 
@@ -188,6 +215,12 @@ type ClientInterface interface {
 
 	// ContainerStop request
 	ContainerStop(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImageList request
+	ImageList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImageRemove request
+	ImageRemove(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ContainerCreateWithBody(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -252,6 +285,30 @@ func (c *Client) ContainerStart(ctx context.Context, containerId string, reqEdit
 
 func (c *Client) ContainerStop(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewContainerStopRequest(c.Server, containerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ImageList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImageListRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ImageRemove(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImageRemoveRequest(c.Server, imageId)
 	if err != nil {
 		return nil, err
 	}
@@ -471,6 +528,67 @@ func NewContainerStopRequest(server string, containerId string) (*http.Request, 
 	return req, nil
 }
 
+// NewImageListRequest generates requests for ImageList
+func NewImageListRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/images/list")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewImageRemoveRequest generates requests for ImageRemove
+func NewImageRemoveRequest(server string, imageId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "image_id", runtime.ParamLocationPath, imageId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/images/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -530,6 +648,12 @@ type ClientWithResponsesInterface interface {
 
 	// ContainerStop request
 	ContainerStopWithResponse(ctx context.Context, containerId string, reqEditors ...RequestEditorFn) (*ContainerStopResponse, error)
+
+	// ImageList request
+	ImageListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ImageListResponse, error)
+
+	// ImageRemove request
+	ImageRemoveWithResponse(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*ImageRemoveResponse, error)
 }
 
 type ContainerCreateResponse struct {
@@ -651,6 +775,51 @@ func (r ContainerStopResponse) StatusCode() int {
 	return 0
 }
 
+type ImageListResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]Image
+}
+
+// Status returns HTTPResponse.Status
+func (r ImageListResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ImageListResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ImageRemoveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IdResponse
+	JSON404      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ImageRemoveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ImageRemoveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // ContainerCreateWithBodyWithResponse request with arbitrary body returning *ContainerCreateResponse
 func (c *ClientWithResponses) ContainerCreateWithBodyWithResponse(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ContainerCreateResponse, error) {
 	rsp, err := c.ContainerCreateWithBody(ctx, params, contentType, body, reqEditors...)
@@ -702,6 +871,24 @@ func (c *ClientWithResponses) ContainerStopWithResponse(ctx context.Context, con
 		return nil, err
 	}
 	return ParseContainerStopResponse(rsp)
+}
+
+// ImageListWithResponse request returning *ImageListResponse
+func (c *ClientWithResponses) ImageListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ImageListResponse, error) {
+	rsp, err := c.ImageList(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImageListResponse(rsp)
+}
+
+// ImageRemoveWithResponse request returning *ImageRemoveResponse
+func (c *ClientWithResponses) ImageRemoveWithResponse(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*ImageRemoveResponse, error) {
+	rsp, err := c.ImageRemove(ctx, imageId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImageRemoveResponse(rsp)
 }
 
 // ParseContainerCreateResponse parses an HTTP response from a ContainerCreateWithResponse call
@@ -897,6 +1084,65 @@ func ParseContainerStopResponse(rsp *http.Response) (*ContainerStopResponse, err
 	return response, nil
 }
 
+// ParseImageListResponse parses an HTTP response from a ImageListWithResponse call
+func ParseImageListResponse(rsp *http.Response) (*ImageListResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ImageListResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Image
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseImageRemoveResponse parses an HTTP response from a ImageRemoveWithResponse call
+func ParseImageRemoveResponse(rsp *http.Response) (*ImageRemoveResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ImageRemoveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Create a container
@@ -914,6 +1160,12 @@ type ServerInterface interface {
 	// Stop a container
 	// (POST /containers/{container_id}/stop)
 	ContainerStop(ctx echo.Context, containerId string) error
+	// List images
+	// (GET /images/list)
+	ImageList(ctx echo.Context) error
+	// Remove image
+	// (DELETE /images/{image_id})
+	ImageRemove(ctx echo.Context, imageId string) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -1005,6 +1257,31 @@ func (w *ServerInterfaceWrapper) ContainerStop(ctx echo.Context) error {
 	return err
 }
 
+// ImageList converts echo context to params.
+func (w *ServerInterfaceWrapper) ImageList(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.ImageList(ctx)
+	return err
+}
+
+// ImageRemove converts echo context to params.
+func (w *ServerInterfaceWrapper) ImageRemove(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "image_id" -------------
+	var imageId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "image_id", runtime.ParamLocationPath, ctx.Param("image_id"), &imageId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter image_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.ImageRemove(ctx, imageId)
+	return err
+}
+
 // This is a simple interface which specifies echo.Route addition functions which
 // are present on both echo.Echo and echo.Group, since we want to allow using
 // either of them for path registration
@@ -1038,36 +1315,42 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.DELETE(baseURL+"/containers/:container_id", wrapper.ContainerDelete)
 	router.POST(baseURL+"/containers/:container_id/start", wrapper.ContainerStart)
 	router.POST(baseURL+"/containers/:container_id/stop", wrapper.ContainerStop)
+	router.GET(baseURL+"/images/list", wrapper.ImageList)
+	router.DELETE(baseURL+"/images/:image_id", wrapper.ImageRemove)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+xX/2/bthL/Vw5874cWT5bdl/a9zkAwpE3WZeuKIkkxYEGQ0uLZYiqRKknZ8QL/78OR",
-	"liVbSuwgxjCg/ckydbovn7vP3fGOJTovtELlLBveMZukmHP/+FYrx6VC81arsZzQkUCbGFk4qRUbsnBe",
-	"Gk7/YawNcEiqj8Cl3IG0UGjj+ChDGKGbISpItXWWRawwukDjJHprSS7oB295XmTIhpesP5Kqb1MWsV7C",
-	"IpZZ6LOriEmHuf/CzQtkQ2adkWrCFlF1wI3hc/qPatp2+r20DvQYUE2l0SpH5WDKjSQXLVh0MEtRgUsR",
-	"Ep3nXAkKAm8xKR0KFjU9PD558+nd4YBF7P3Rh3eHgl8f/xp/uvip9/pxjsqcT7Dt6kWKoHiO5C7548XA",
-	"aSgtBi8Tg9xJNVm6u4SeRW2TN1xm1wU3PL8fEpIBL4MOjYVnFtEfPnv93KdXoOMys8/XUeBZpmex4bNr",
-	"q5Mv6OyhMyWyiGlrMENu8fCGXhhS9ThgFLqZNl/s/T5XEqHc1mAAm+oyEzDyZwoThwKcZo9xYKqzMscH",
-	"7C8FgvnaYK5LReakcrqVnF3N04F0BHKLiytRPbrBxLGI3fasM2Xi2JCdZPJWmvgXD3p8oiZSYXz08TQ+",
-	"D+SON7UtotrAeZnn3MzbEdvwAhqnBABfC22D04FAXZ0jMGuEVLylRRHq2TpudqtnX/nYofr3mr1VHcy4",
-	"hUq+Q5UU3dSTIhBP2odd8bS83qZlRd9Qp02lTQdhbHR+vxVqB207H9pN4klWHO/o9hd8sh8b22N4EG5T",
-	"KkWPLQ2zFF2KBrQBpTd7gbRQfbjSOdI6Q666iVbxYE9Mq9QtInZijDZnaAutbAcQZ1gYtDSPgStAEm72",
-	"2zuWo7V+XrBznaNLiS8zGmMzo9UkJhPrNFx90FWf3gAsReI24IQ4fi2lIbJdrnRd1ZCtx/M0vNZ1LSJ2",
-	"Kh5CKryhkcgVHH08hYRnWShMg640ysJNaR29PRWt9rSdsstS7udayLFE0RdondFzFBDC2w6YFE2sGuE8",
-	"DaiGogWZlGqs29H8fHHx0eNC05u6calkEjaGmXSpjzHYgGCD1a6uncPZyfkFaaKAp2hs0D+IB/ELSpMu",
-	"UPFCsiE7iAcxbUQFd6lHub8ioe0HPOm00NbRL+XD74+nYm3MBUFSU60jbHi5Gd6RtXISur0tMPEpChvT",
-	"5tSN4Teqg5y7JIXP/R8vee/Po94fg94PV/Xjddy7+s9nilCS9q8lev6HfhV+ouWC3DG9F1ch8WjdGy3m",
-	"Yf4ph8rHyYsi89Br1b+x5P1dQ9W/DY7ZkP2rXy/j/eUm3m8Na0p3axFftrlkbSXfaVWsi5XWNl+9obB8",
-	"9v47eLG3SDZrdj0IpZfNbhGxV4PB3qxutJS2YYtmiqYyvoiqTYeA9WW4tuOQQLOkMxkKeYKuq0OFJkQK",
-	"8oInDkicsqDHtU5LJXcPEWjP3EaDYAWo9TV0whva1ca8zFwEWmXzagA2hIAbpK11pu6rep5lXUVfj86r",
-	"VsE8LnWrZXgnDjTG6Mau/EA9raXUL+41Aq183q2er6VYhJRmGJrWPTk6DgJbsnR67DeTrjUnhiMFUkkn",
-	"eQYWJ/5SWu1aAhKu6E5hSwKSLhVjkA5KJb+WmFGSHZpcKn8LaWqtUkqtuM5oM74W/bf2tydkej+t4eXg",
-	"5Q5WO9elDxpsmaQ1QkMQ4/+hePnq4ODV/0ekfU8tRW1a+ic1tTPM9fThprZOgr6/lu0wtc+93Hce/B08",
-	"ONiJB3uqpvoexTODXMzDTR3Fd0bug5GeN48jpC524qMuvtPx26CjLoon07GTJN8GAXWxwb/F4q8AAAD/",
-	"//B0Du8bGQAA",
+	"H4sIAAAAAAAC/+xZcW/bthL/KgTf+6PFUyT3pX2vMxAMaZNl7togSFIUWBC4tHS2mEqkSlJ2vMDffThS",
+	"siRLie3ZG4a1f9mmyLvj3f3ufic/0FCmmRQgjKb9B6rDGFJmv76VwjAuQL2VYswnuBSBDhXPDJeC9qlb",
+	"zxXD32QsFWEkLA8REzNDuCaZVIaNEiAjMDMAQWKpjaYezZTMQBkOVluYRvgB9yzNEqD9GxqMuAh0TD16",
+	"EFKPJpoE9Naj3EBqT5h5BrRPtVFcTOjCKxeYUmyOv0FM20a/59oQOSYgplxJkYIwZMoURxM10WDILAZB",
+	"TAwklGnKRISXgHsIcwMR9eoWnpy++Xh21KMefX98fnYUseHJL/7H658OXm9nKE/ZBNqmXsdABEsBzUV7",
+	"7DZiJMk1OCtDBcxwMSnMLVxPvbbKO8aTYcYUSx93Ce4hdg8YUJo80wB28dnr5za8ERjGE/286QWWJHLm",
+	"KzYbahl+AaOPjMqBelRqBQkwDUd3+EChqO0cI8DMpPqiH7e53OHSreEGomOZJxEZ2TUBoYGIGEm3MWAq",
+	"kzyFJ/QXG5z6SmEqc4HquDCyFZxN1eMCN+jkFhaXW+XoDkJDPXp/oI3KQ0P79DTh91z576zT/VMx4QL8",
+	"44uBf+XA7a9KW3iVgqs8TZmat2+s3QNSW0UHsMbVVjDtANRVORyyRoDJm2uIXD5rw9Rm+WwzHzpEf6rQ",
+	"W+bBjGlS7u8QxaNu6PHIAY/rp02xsByuk7KEr8vTutC6gWSsZPq4FiwHbT3n7SKxkxbDOqr9NZvsR8f6",
+	"OzzpbpULgV9bEmYxmBgUkYoIuVoLuCblwaXMkZQJMNENtBIHe0JaKW7h0VOlpLoEnUmhOxxxCZkCjf2Y",
+	"MEEAN9fr7QNNQWvbL+iVTMHEiJcZtrGZkmLio4omDJcHuvLTKiDFFr/tcPQ4fM25QrDdLGXdVi5r3mc3",
+	"fzVlLTw6iJ7ylHuCLZEJcnwxICFLEpeYCkyuhCZ3uTb4dBC1ytN6yBapHKQy4mMOURCBNkrOISLueusd",
+	"xqO6r2rX2c1RNUHopW4CUWE1BcMiZtjmJfoExixPzJIEVUV6STrqbA/B7oqBIzPeE0zO/kz0dlRgfcF3",
+	"N11T7EFMh1Om9LbEEF1gYuCKTFmSY8OXliyOYCwVlLWl9JbfvP/Fp5OjQEkZUI++Ox68H344+3A9PD0/",
+	"G5yfFtxoS8K4WbPpckDC5qA6u9VgedjuKYNbtuNHJW7Yk7qObtRoug7mGlT7JK7WEtWR9opOuEzvAuwS",
+	"nk19fwyZVsYCxXIxlm0rf76+vrDFCik1WpULHjpEzbiJrbFOPHHiaWVgY51cnl5doyRMtyko7eT3/J7/",
+	"Ap0kMxAs47RPD/2ej2NKxkxsMyxYIlcHDi24mklt8BMLhB3qBlGDe7qNKKacEWj/ZvV6x1rziUOkziC0",
+	"ddONMatU2CcfsDinzIQx+Rz8eMMOfjs++LV38MNt9XXoH9z+5zPekKP0rznYpuySzn14xdTaAZ3FravG",
+	"oM0bGc1dxRMGhL0ny7LEul6K4E6j9Q81Uf9WMKZ9+q+gmpCDYjwOWgwaw92ajovaGDbm5I3mt6qD4Cxl",
+	"W4qr9jZ6/+292NtN6o2kfQkhCway8OirXm9vWlf6fFuxBjUFVSpfeOX4gY61adgYPHBDPaUT7hJ5AqaL",
+	"NjhmgALSjIWG4HaMghxXMjWm3CNAwFaxDgZOC0E+UpNJ3uAAZTurR6RI5rXOUW4iTAGOkjPxWNazJOlK",
+	"+orP3rYSZrvQLTvRRhiocduVAfaJfGqE1PbeygOteD4svw95tHAhTcAVrUdidOI2rInS4MSOC12zh0+O",
+	"BeGCG84SomFiCUHZlyISMoGDvs7RkTjpjwk3JBf8aw4JBtmASrmwrwbqUsuQYimuIlq/Xwv+a+vbDpHe",
+	"T2l42Xu5gdbOGeZcEp2HceWhPonG/4Po5avDw1f/H6H0PZUUsarp71TULiGV06eLWhMEgX1XskHXvrL7",
+	"vuPgr8DB4UY42FM2VcMXSxSwaO5en0H0HZH7QKTFzXaAlNlGeJTZdzh+G3CUWbYzHDtB8m0AUGZt/NlX",
+	"Ahsz/KR4qeNOtSm9HdYLOv/nM+bi1cBuNNldpeGMh/IviBVqvJNXHCPZvlJZoXutUk5id4Va/vnyTyXN",
+	"e0Y6L95OdXDP8tFi8XsAAAD//73PiJkVIAAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
