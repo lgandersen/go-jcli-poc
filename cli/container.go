@@ -20,7 +20,7 @@ const url = "http://localhost:8085/"
 const ws = "ws://localhost:8085/containers/%s/attach"
 const succesful_ws_exit = "websocket: close 1000 (normal): exit:"
 
-func NewContainerCommand() *cobra.Command {
+func ContainerCommand() *cobra.Command {
 	containerCmd := &cobra.Command{
 		Use:                   "container",
 		Short:                 "Manage containers",
@@ -31,15 +31,15 @@ func NewContainerCommand() *cobra.Command {
 		},
 	}
 
-	containerCmd.AddCommand(NewContainerCreateCommand())
-	containerCmd.AddCommand(NewContainerRemoveCommand())
-	containerCmd.AddCommand(NewContainerStartCommand())
-	containerCmd.AddCommand(NewContainerStopCommand())
-	containerCmd.AddCommand(NewContainerListCommand())
+	containerCmd.AddCommand(ContainerCreateCommand())
+	containerCmd.AddCommand(ContainerRemoveCommand())
+	containerCmd.AddCommand(ContainerStartCommand())
+	containerCmd.AddCommand(ContainerStopCommand())
+	containerCmd.AddCommand(ContainerListCommand())
 	return containerCmd
 }
 
-func NewContainerCreateCommand() *cobra.Command {
+func ContainerCreateCommand() *cobra.Command {
 	config := Openapi.ContainerCreateJSONRequestBody{
 		Networks:  &([]string{}),
 		Volumes:   &([]string{}),
@@ -100,7 +100,7 @@ func PostContainerCreate(name *string, body Openapi.ContainerCreateJSONRequestBo
 	return response, nil
 }
 
-func NewContainerRemoveCommand() *cobra.Command {
+func ContainerRemoveCommand() *cobra.Command {
 	removeCmd := &cobra.Command{
 		Use:   "rm",
 		Short: "Remove one or more containers",
@@ -138,7 +138,7 @@ func PostContainerRemove(args []string) (*Openapi.ContainerDeleteResponse, error
 	}
 }
 
-func NewContainerStartCommand() *cobra.Command {
+func ContainerStartCommand() *cobra.Command {
 	var attach bool
 	cmd := &cobra.Command{
 		Use:                   "start [OPTIONS] CONTAINER [CONTAINER...]",
@@ -272,7 +272,7 @@ func StartSingleContainer(client *Openapi.ClientWithResponses, container string)
 	return ""
 }
 
-func NewContainerStopCommand() *cobra.Command {
+func ContainerStopCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop one or more running containers",
@@ -318,7 +318,7 @@ func ContainerStop(args []string) (*Openapi.ContainerStopResponse, error) {
 	}
 }
 
-func NewContainerListCommand() *cobra.Command {
+func ContainerListCommand() *cobra.Command {
 	var all bool
 
 	listCmd := &cobra.Command{

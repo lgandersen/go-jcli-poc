@@ -29,5 +29,6 @@ func Execute() error {
 func init() {
 	RootCmd.PersistentFlags().BoolVarP(&debug, "debug", "D", false, "Enable debug mode")
 	RootCmd.PersistentFlags().StringVarP(&host, "host", "H", "", "Daemon socket to connect to: tcp://[host]:[port][path] or unix://[/path/to/socket]")
-	RootCmd.AddCommand(NewContainerCommand())
+	RootCmd.AddCommand(ContainerCommand())
+	RootCmd.AddCommand(ImageCommand())
 }
