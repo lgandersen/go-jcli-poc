@@ -4,20 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
-	"os/signal"
 	"strings"
 	"time"
 
 	Openapi "jcli/client"
 
-	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 )
 
-const url = "http://localhost:8085/"
-const ws = "ws://localhost:8085/containers/%s/attach"
+const jocker_engine_url = "http://localhost:8085/"
+const ws_container_attach = "ws://localhost:8085/containers/%s/attach"
 const succesful_ws_exit = "websocket: close 1000 (normal): exit:"
 
 func ContainerCommand() *cobra.Command {
@@ -49,22 +46,24 @@ func ContainerCreateCommand() *cobra.Command {
 
 	var name string
 
-	createCmd := &cobra.Command{
-		Use:   "create",
-		Short: "Create a new container",
-		Long:  `Create a new container`,
+	cmd := &cobra.Command{
+		Use:                   "create [OPTIONS] IMAGE [COMMAND] [ARG...]",
+		Short:                 "Create a new container",
+		Long:                  `Create a new container`,
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			RunContainerCreate(cmd, &name, config, args)
 		},
 	}
 
-	flags := createCmd.Flags()
+	flags := cmd.Flags()
 	flags.StringVar(&name, "name", "", "Assign a name to the container")
 	flags.StringSliceVar(config.Networks, "network", []string{}, "Connect a container to a network")
 	flags.StringSliceVarP(config.Volumes, "volume", "v", []string{}, "Bind mount a volume to the container")
 	flags.StringSliceVarP(config.Env, "env", "e", []string{}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
-	flags.StringSliceVarP(config.JailParam, "jailparam", "J", []string{"mount.devfs"}, "Specify a jail parameter (see jail(8) for details)")
-	return createCmd
+	flags.StringSliceVarP(config.JailParam, "jailparam", "J", []string{"mount.devfs"}, "Specify a jail parameter, see jail(8) for details")
+	return cmd
 }
 
 func RunContainerCreate(cmd *cobra.Command, name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) {
@@ -101,15 +100,17 @@ func PostContainerCreate(name *string, body Openapi.ContainerCreateJSONRequestBo
 }
 
 func ContainerRemoveCommand() *cobra.Command {
-	removeCmd := &cobra.Command{
-		Use:   "rm",
-		Short: "Remove one or more containers",
-		Long:  `Remove one or more containers loooong`,
+	cmd := &cobra.Command{
+		Use:                   "rm",
+		Short:                 "Remove one or more containers",
+		Long:                  `Remove one or more containers`,
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			RunContainerRemove(cmd, args)
 		},
 	}
-	return removeCmd
+	return cmd
 }
 
 func RunContainerRemove(cmd *cobra.Command, args []string) {
@@ -182,66 +183,14 @@ func StartAndAttachToContainer(args []string) {
 		fmt.Println("When attaching to STDOUT/STDERR only 1 container can be started")
 		return
 	}
-
 	container_id := args[0]
-	endpoint := fmt.Sprintf(ws, container_id)
-	c, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
-	if err != nil {
-		log.Fatal("dial:", err)
-	}
-	defer c.Close()
+	endpoint := fmt.Sprintf(ws_container_attach, container_id)
 
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-	done := make(chan struct{})
-
-	go ListenForWSMessages(done, c)
+	done, interrupt, ws := Dial(endpoint)
+	go ListenForWSMessages(done, ws)
 	StartSingleContainer(NewHTTPClient(), container_id)
+	AwaitDoneOrUserInterrupt(done, interrupt, ws)
 
-	for {
-		select {
-		case <-done:
-			return
-		case <-interrupt:
-			fmt.Println("Interrupted by user")
-			TryGracefulWSDisconnectconnect(done, c)
-			return
-		}
-	}
-}
-
-func ListenForWSMessages(done chan struct{}, c *websocket.Conn) {
-	defer close(done)
-	for {
-		_, message, err := c.ReadMessage()
-		if err != nil {
-			if strings.HasPrefix(err.Error(), succesful_ws_exit) {
-				fmt.Println(err.Error()[len(succesful_ws_exit):])
-			} else {
-				fmt.Println("websocket closed unexpectedly:", err.Error())
-			}
-			return
-		}
-		msg := string(message)
-		if msg[:3] == "ok:" {
-			// First message receieved when the ws is succesfully established.
-			continue
-		}
-		if msg[:3] == "io:" {
-			fmt.Print(msg[3:])
-		}
-	}
-}
-
-func TryGracefulWSDisconnectconnect(done chan struct{}, c *websocket.Conn) {
-	_ = c.WriteMessage(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-	)
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-	}
 }
 
 func StartSingleContainer(client *Openapi.ClientWithResponses, container string) string {
@@ -274,8 +223,10 @@ func StartSingleContainer(client *Openapi.ClientWithResponses, container string)
 
 func ContainerStopCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "stop",
-		Short: "Stop one or more running containers",
+		Use:                   "stop",
+		Short:                 "Stop one or more running containers",
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			RunContainerStop(cmd, args)
 		},
@@ -322,9 +273,11 @@ func ContainerListCommand() *cobra.Command {
 	var all bool
 
 	listCmd := &cobra.Command{
-		Use:   "ls",
-		Short: "List containers",
-		Long:  `List containers loooong`,
+		Use:                   "ls",
+		Short:                 "List containers",
+		Long:                  `List containers`,
+		Args:                  cobra.NoArgs,
+		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			RunContainerList(all, args)
 		},
@@ -372,28 +325,28 @@ func PrintContainerList(container_list *[]Openapi.ContainerSummary) {
 
 	var running string
 
-	for _, c := range *container_list {
-		if *c.Running {
+	for _, ws := range *container_list {
+		if *ws.Running {
 			running = "running"
 		} else {
 			running = "stopped"
 		}
-		created, _ := time.Parse(time.RFC3339, *c.Created)
+		created, _ := time.Parse(time.RFC3339, *ws.Created)
 		since_created := time.Since(created)
 
 		fmt.Println(
-			Cell(*c.Id, 12), Sp(1),
-			Cell(*c.ImageId, 15), Sp(1),
-			Cell(*c.Command, 23), Sp(1),
+			Cell(*ws.Id, 12), Sp(1),
+			Cell(*ws.ImageId, 15), Sp(1),
+			Cell(*ws.Command, 23), Sp(1),
 			Cell(HumanDuration(since_created)+" ago", 18), Sp(1),
 			Cell(running, 7), Sp(1),
-			*c.Name,
+			*ws.Name,
 		)
 	}
 }
 
 func NewHTTPClient() *Openapi.ClientWithResponses {
-	client, err := Openapi.NewClientWithResponses(url)
+	client, err := Openapi.NewClientWithResponses(jocker_engine_url)
 	if err != nil {
 		fmt.Println("Internal error: ", err)
 		os.Exit(1)

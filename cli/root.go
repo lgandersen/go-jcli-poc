@@ -9,9 +9,8 @@ import (
 
 var (
 	// Used for flags.
-	version bool
-	debug   bool
-	host    string
+	debug bool
+	host  string
 
 	RootCmd = &cobra.Command{
 		Use:     "jcli",
