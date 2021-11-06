@@ -108,6 +108,39 @@ type Image struct {
 	User *string `json:"user,omitempty"`
 }
 
+// Network configuration
+type NetworkConfig struct {
+	// Network type. Only 'loopback' type of network is supported.
+	Driver *string `json:"driver,omitempty"`
+
+	// Name of the interface that is being used for the network.
+	Ifname *string `json:"ifname,omitempty"`
+
+	// Name of the network.
+	Name string `json:"name"`
+
+	// The subnet (in CIDR-format) that is used for the network.
+	Subnet *string `json:"subnet,omitempty"`
+}
+
+// summary description of a network
+type NetworkSummary struct {
+	// interface where the gateway can be reached
+	DefaultGwIf *bool `json:"default_gw_if,omitempty"`
+
+	// The id of the network
+	Id *string `json:"id,omitempty"`
+
+	// Name of the loopback interface used for the network
+	IfName *string `json:"if_name,omitempty"`
+
+	// Name of the network
+	Name *string `json:"name,omitempty"`
+
+	// subnet used for the network
+	Subnet *string `json:"subnet,omitempty"`
+}
+
 // ContainerCreateJSONBody defines parameters for ContainerCreate.
 type ContainerCreateJSONBody ContainerConfig
 
@@ -123,8 +156,14 @@ type ContainerListParams struct {
 	All *bool `json:"all,omitempty"`
 }
 
+// NetworkCreateJSONBody defines parameters for NetworkCreate.
+type NetworkCreateJSONBody NetworkConfig
+
 // ContainerCreateJSONRequestBody defines body for ContainerCreate for application/json ContentType.
 type ContainerCreateJSONRequestBody ContainerCreateJSONBody
+
+// NetworkCreateJSONRequestBody defines body for NetworkCreate for application/json ContentType.
+type NetworkCreateJSONRequestBody NetworkCreateJSONBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -221,6 +260,23 @@ type ClientInterface interface {
 
 	// ImageRemove request
 	ImageRemove(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// NetworkCreate request with any body
+	NetworkCreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	NetworkCreate(ctx context.Context, body NetworkCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// NetworkList request
+	NetworkList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// NetworkRemove request
+	NetworkRemove(ctx context.Context, networkId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// NetworkConnect request
+	NetworkConnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// NetworkDisconnect request
+	NetworkDisconnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ContainerCreateWithBody(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -309,6 +365,78 @@ func (c *Client) ImageList(ctx context.Context, reqEditors ...RequestEditorFn) (
 
 func (c *Client) ImageRemove(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewImageRemoveRequest(c.Server, imageId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkCreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkCreateRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkCreate(ctx context.Context, body NetworkCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkCreateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkListRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkRemove(ctx context.Context, networkId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkRemoveRequest(c.Server, networkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkConnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkConnectRequest(c.Server, networkId, containerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NetworkDisconnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNetworkDisconnectRequest(c.Server, networkId, containerId)
 	if err != nil {
 		return nil, err
 	}
@@ -589,6 +717,189 @@ func NewImageRemoveRequest(server string, imageId string) (*http.Request, error)
 	return req, nil
 }
 
+// NewNetworkCreateRequest calls the generic NetworkCreate builder with application/json body
+func NewNetworkCreateRequest(server string, body NetworkCreateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewNetworkCreateRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewNetworkCreateRequestWithBody generates requests for NetworkCreate with any type of body
+func NewNetworkCreateRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/networks/create")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewNetworkListRequest generates requests for NetworkList
+func NewNetworkListRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/networks/list")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewNetworkRemoveRequest generates requests for NetworkRemove
+func NewNetworkRemoveRequest(server string, networkId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "network_id", runtime.ParamLocationPath, networkId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/networks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewNetworkConnectRequest generates requests for NetworkConnect
+func NewNetworkConnectRequest(server string, networkId string, containerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "network_id", runtime.ParamLocationPath, networkId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "container_id", runtime.ParamLocationPath, containerId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/networks/%s/connect/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewNetworkDisconnectRequest generates requests for NetworkDisconnect
+func NewNetworkDisconnectRequest(server string, networkId string, containerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "network_id", runtime.ParamLocationPath, networkId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "container_id", runtime.ParamLocationPath, containerId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/networks/%s/disconnect/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -654,6 +965,23 @@ type ClientWithResponsesInterface interface {
 
 	// ImageRemove request
 	ImageRemoveWithResponse(ctx context.Context, imageId string, reqEditors ...RequestEditorFn) (*ImageRemoveResponse, error)
+
+	// NetworkCreate request with any body
+	NetworkCreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*NetworkCreateResponse, error)
+
+	NetworkCreateWithResponse(ctx context.Context, body NetworkCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*NetworkCreateResponse, error)
+
+	// NetworkList request
+	NetworkListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*NetworkListResponse, error)
+
+	// NetworkRemove request
+	NetworkRemoveWithResponse(ctx context.Context, networkId string, reqEditors ...RequestEditorFn) (*NetworkRemoveResponse, error)
+
+	// NetworkConnect request
+	NetworkConnectWithResponse(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*NetworkConnectResponse, error)
+
+	// NetworkDisconnect request
+	NetworkDisconnectWithResponse(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*NetworkDisconnectResponse, error)
 }
 
 type ContainerCreateResponse struct {
@@ -820,6 +1148,126 @@ func (r ImageRemoveResponse) StatusCode() int {
 	return 0
 }
 
+type NetworkCreateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *IdResponse
+	JSON409      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r NetworkCreateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NetworkCreateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type NetworkListResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]NetworkSummary
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r NetworkListResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NetworkListResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type NetworkRemoveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IdResponse
+	JSON404      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r NetworkRemoveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NetworkRemoveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type NetworkConnectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON204      *IdResponse
+	JSON404      *ErrorResponse
+	JSON409      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r NetworkConnectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NetworkConnectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type NetworkDisconnectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON204      *IdResponse
+	JSON404      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r NetworkDisconnectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NetworkDisconnectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // ContainerCreateWithBodyWithResponse request with arbitrary body returning *ContainerCreateResponse
 func (c *ClientWithResponses) ContainerCreateWithBodyWithResponse(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ContainerCreateResponse, error) {
 	rsp, err := c.ContainerCreateWithBody(ctx, params, contentType, body, reqEditors...)
@@ -889,6 +1337,59 @@ func (c *ClientWithResponses) ImageRemoveWithResponse(ctx context.Context, image
 		return nil, err
 	}
 	return ParseImageRemoveResponse(rsp)
+}
+
+// NetworkCreateWithBodyWithResponse request with arbitrary body returning *NetworkCreateResponse
+func (c *ClientWithResponses) NetworkCreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*NetworkCreateResponse, error) {
+	rsp, err := c.NetworkCreateWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkCreateResponse(rsp)
+}
+
+func (c *ClientWithResponses) NetworkCreateWithResponse(ctx context.Context, body NetworkCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*NetworkCreateResponse, error) {
+	rsp, err := c.NetworkCreate(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkCreateResponse(rsp)
+}
+
+// NetworkListWithResponse request returning *NetworkListResponse
+func (c *ClientWithResponses) NetworkListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*NetworkListResponse, error) {
+	rsp, err := c.NetworkList(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkListResponse(rsp)
+}
+
+// NetworkRemoveWithResponse request returning *NetworkRemoveResponse
+func (c *ClientWithResponses) NetworkRemoveWithResponse(ctx context.Context, networkId string, reqEditors ...RequestEditorFn) (*NetworkRemoveResponse, error) {
+	rsp, err := c.NetworkRemove(ctx, networkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkRemoveResponse(rsp)
+}
+
+// NetworkConnectWithResponse request returning *NetworkConnectResponse
+func (c *ClientWithResponses) NetworkConnectWithResponse(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*NetworkConnectResponse, error) {
+	rsp, err := c.NetworkConnect(ctx, networkId, containerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkConnectResponse(rsp)
+}
+
+// NetworkDisconnectWithResponse request returning *NetworkDisconnectResponse
+func (c *ClientWithResponses) NetworkDisconnectWithResponse(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*NetworkDisconnectResponse, error) {
+	rsp, err := c.NetworkDisconnect(ctx, networkId, containerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNetworkDisconnectResponse(rsp)
 }
 
 // ParseContainerCreateResponse parses an HTTP response from a ContainerCreateWithResponse call
@@ -1143,6 +1644,206 @@ func ParseImageRemoveResponse(rsp *http.Response) (*ImageRemoveResponse, error) 
 	return response, nil
 }
 
+// ParseNetworkCreateResponse parses an HTTP response from a NetworkCreateWithResponse call
+func ParseNetworkCreateResponse(rsp *http.Response) (*NetworkCreateResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NetworkCreateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseNetworkListResponse parses an HTTP response from a NetworkListWithResponse call
+func ParseNetworkListResponse(rsp *http.Response) (*NetworkListResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NetworkListResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []NetworkSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseNetworkRemoveResponse parses an HTTP response from a NetworkRemoveWithResponse call
+func ParseNetworkRemoveResponse(rsp *http.Response) (*NetworkRemoveResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NetworkRemoveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseNetworkConnectResponse parses an HTTP response from a NetworkConnectWithResponse call
+func ParseNetworkConnectResponse(rsp *http.Response) (*NetworkConnectResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NetworkConnectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON204 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseNetworkDisconnectResponse parses an HTTP response from a NetworkDisconnectWithResponse call
+func ParseNetworkDisconnectResponse(rsp *http.Response) (*NetworkDisconnectResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NetworkDisconnectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON204 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Create a container
@@ -1166,6 +1867,21 @@ type ServerInterface interface {
 	// Remove image
 	// (DELETE /images/{image_id})
 	ImageRemove(ctx echo.Context, imageId string) error
+	// Create network
+	// (POST /networks/create)
+	NetworkCreate(ctx echo.Context) error
+	// List networks
+	// (GET /networks/list)
+	NetworkList(ctx echo.Context) error
+	// Remove a network
+	// (DELETE /networks/{network_id})
+	NetworkRemove(ctx echo.Context, networkId string) error
+	// Connect a container to a network
+	// (POST /networks/{network_id}/connect/{container_id})
+	NetworkConnect(ctx echo.Context, networkId string, containerId string) error
+	// Disconnect a container from a network
+	// (POST /networks/{network_id}/disconnect/{container_id})
+	NetworkDisconnect(ctx echo.Context, networkId string, containerId string) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -1282,6 +1998,88 @@ func (w *ServerInterfaceWrapper) ImageRemove(ctx echo.Context) error {
 	return err
 }
 
+// NetworkCreate converts echo context to params.
+func (w *ServerInterfaceWrapper) NetworkCreate(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.NetworkCreate(ctx)
+	return err
+}
+
+// NetworkList converts echo context to params.
+func (w *ServerInterfaceWrapper) NetworkList(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.NetworkList(ctx)
+	return err
+}
+
+// NetworkRemove converts echo context to params.
+func (w *ServerInterfaceWrapper) NetworkRemove(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "network_id" -------------
+	var networkId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "network_id", runtime.ParamLocationPath, ctx.Param("network_id"), &networkId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter network_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.NetworkRemove(ctx, networkId)
+	return err
+}
+
+// NetworkConnect converts echo context to params.
+func (w *ServerInterfaceWrapper) NetworkConnect(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "network_id" -------------
+	var networkId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "network_id", runtime.ParamLocationPath, ctx.Param("network_id"), &networkId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter network_id: %s", err))
+	}
+
+	// ------------- Path parameter "container_id" -------------
+	var containerId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "container_id", runtime.ParamLocationPath, ctx.Param("container_id"), &containerId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter container_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.NetworkConnect(ctx, networkId, containerId)
+	return err
+}
+
+// NetworkDisconnect converts echo context to params.
+func (w *ServerInterfaceWrapper) NetworkDisconnect(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "network_id" -------------
+	var networkId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "network_id", runtime.ParamLocationPath, ctx.Param("network_id"), &networkId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter network_id: %s", err))
+	}
+
+	// ------------- Path parameter "container_id" -------------
+	var containerId string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "container_id", runtime.ParamLocationPath, ctx.Param("container_id"), &containerId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter container_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.NetworkDisconnect(ctx, networkId, containerId)
+	return err
+}
+
 // This is a simple interface which specifies echo.Route addition functions which
 // are present on both echo.Echo and echo.Group, since we want to allow using
 // either of them for path registration
@@ -1317,40 +2115,53 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.POST(baseURL+"/containers/:container_id/stop", wrapper.ContainerStop)
 	router.GET(baseURL+"/images/list", wrapper.ImageList)
 	router.DELETE(baseURL+"/images/:image_id", wrapper.ImageRemove)
+	router.POST(baseURL+"/networks/create", wrapper.NetworkCreate)
+	router.GET(baseURL+"/networks/list", wrapper.NetworkList)
+	router.DELETE(baseURL+"/networks/:network_id", wrapper.NetworkRemove)
+	router.POST(baseURL+"/networks/:network_id/connect/:container_id", wrapper.NetworkConnect)
+	router.POST(baseURL+"/networks/:network_id/disconnect/:container_id", wrapper.NetworkDisconnect)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"e0Y6L95OdXDP8tFi8XsAAAD//73PiJkVIAAA",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
