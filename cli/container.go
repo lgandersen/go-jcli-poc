@@ -18,7 +18,7 @@ const ws_container_attach = "ws://localhost:8085/containers/%s/attach"
 const succesful_ws_exit = "websocket: close 1000 (normal): exit:"
 
 func ContainerCommand() *cobra.Command {
-	containerCmd := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                   "container",
 		Short:                 "Manage containers",
 		Long:                  `Manage containers`,
@@ -28,12 +28,12 @@ func ContainerCommand() *cobra.Command {
 		},
 	}
 
-	containerCmd.AddCommand(ContainerCreateCommand())
-	containerCmd.AddCommand(ContainerRemoveCommand())
-	containerCmd.AddCommand(ContainerStartCommand())
-	containerCmd.AddCommand(ContainerStopCommand())
-	containerCmd.AddCommand(ContainerListCommand())
-	return containerCmd
+	cmd.AddCommand(ContainerCreateCommand())
+	cmd.AddCommand(ContainerRemoveCommand())
+	cmd.AddCommand(ContainerStartCommand())
+	cmd.AddCommand(ContainerStopCommand())
+	cmd.AddCommand(ContainerListCommand())
+	return cmd
 }
 
 func ContainerCreateCommand() *cobra.Command {

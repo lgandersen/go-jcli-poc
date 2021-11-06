@@ -12,6 +12,8 @@ import (
 	"gotest.tools/assert"
 )
 
+var testerer_container_id *string
+
 func TestContainerCreateListRemove(t *testing.T) {
 	var container_id string
 	var all = true
@@ -124,7 +126,8 @@ func ContainerRemoveTesterer(t *testing.T, container_id string) func(*testing.T)
 		assert.NilError(t, err)
 		var empty_id_response *Openapi.IdResponse
 		assert.Assert(t, empty_id_response != response.JSON200)
-		id := (*response.JSON200).Id
+		var id string
+		id = (*response.JSON200).Id
 		assert.Equal(t, id, container_id)
 	}
 }
