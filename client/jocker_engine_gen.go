@@ -141,6 +141,27 @@ type NetworkSummary struct {
 	Subnet *string `json:"subnet,omitempty"`
 }
 
+// Volume configuration
+type VolumeConfig struct {
+	// Name of the volume.
+	Name string `json:"name"`
+}
+
+// summary description of a volume
+type VolumeSummary struct {
+	// when the volume was created
+	Created *string `json:"created,omitempty"`
+
+	// underlying zfs dataset of the volume
+	Dataset *string `json:"dataset,omitempty"`
+
+	// main mountpoint of the volume (the mountpoint shown with 'zfs list')
+	Mountpoint *string `json:"mountpoint,omitempty"`
+
+	// Name of the volume
+	Name *string `json:"name,omitempty"`
+}
+
 // ContainerCreateJSONBody defines parameters for ContainerCreate.
 type ContainerCreateJSONBody ContainerConfig
 
@@ -159,11 +180,17 @@ type ContainerListParams struct {
 // NetworkCreateJSONBody defines parameters for NetworkCreate.
 type NetworkCreateJSONBody NetworkConfig
 
+// VolumeCreateJSONBody defines parameters for VolumeCreate.
+type VolumeCreateJSONBody VolumeConfig
+
 // ContainerCreateJSONRequestBody defines body for ContainerCreate for application/json ContentType.
 type ContainerCreateJSONRequestBody ContainerCreateJSONBody
 
 // NetworkCreateJSONRequestBody defines body for NetworkCreate for application/json ContentType.
 type NetworkCreateJSONRequestBody NetworkCreateJSONBody
+
+// VolumeCreateJSONRequestBody defines body for VolumeCreate for application/json ContentType.
+type VolumeCreateJSONRequestBody VolumeCreateJSONBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -277,6 +304,17 @@ type ClientInterface interface {
 
 	// NetworkDisconnect request
 	NetworkDisconnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VolumeCreate request with any body
+	VolumeCreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	VolumeCreate(ctx context.Context, body VolumeCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VolumeList request
+	VolumeList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VolumeRemove request
+	VolumeRemove(ctx context.Context, volumeName string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ContainerCreateWithBody(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -437,6 +475,54 @@ func (c *Client) NetworkConnect(ctx context.Context, networkId string, container
 
 func (c *Client) NetworkDisconnect(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewNetworkDisconnectRequest(c.Server, networkId, containerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VolumeCreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVolumeCreateRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VolumeCreate(ctx context.Context, body VolumeCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVolumeCreateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VolumeList(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVolumeListRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VolumeRemove(ctx context.Context, volumeName string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVolumeRemoveRequest(c.Server, volumeName)
 	if err != nil {
 		return nil, err
 	}
@@ -900,6 +986,107 @@ func NewNetworkDisconnectRequest(server string, networkId string, containerId st
 	return req, nil
 }
 
+// NewVolumeCreateRequest calls the generic VolumeCreate builder with application/json body
+func NewVolumeCreateRequest(server string, body VolumeCreateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewVolumeCreateRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewVolumeCreateRequestWithBody generates requests for VolumeCreate with any type of body
+func NewVolumeCreateRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/volumes/create")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewVolumeListRequest generates requests for VolumeList
+func NewVolumeListRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/volumes/list")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewVolumeRemoveRequest generates requests for VolumeRemove
+func NewVolumeRemoveRequest(server string, volumeName string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "volume_name", runtime.ParamLocationPath, volumeName)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/volumes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -982,6 +1169,17 @@ type ClientWithResponsesInterface interface {
 
 	// NetworkDisconnect request
 	NetworkDisconnectWithResponse(ctx context.Context, networkId string, containerId string, reqEditors ...RequestEditorFn) (*NetworkDisconnectResponse, error)
+
+	// VolumeCreate request with any body
+	VolumeCreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VolumeCreateResponse, error)
+
+	VolumeCreateWithResponse(ctx context.Context, body VolumeCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*VolumeCreateResponse, error)
+
+	// VolumeList request
+	VolumeListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*VolumeListResponse, error)
+
+	// VolumeRemove request
+	VolumeRemoveWithResponse(ctx context.Context, volumeName string, reqEditors ...RequestEditorFn) (*VolumeRemoveResponse, error)
 }
 
 type ContainerCreateResponse struct {
@@ -1268,6 +1466,75 @@ func (r NetworkDisconnectResponse) StatusCode() int {
 	return 0
 }
 
+type VolumeCreateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON204      *IdResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r VolumeCreateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VolumeCreateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type VolumeListResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]VolumeSummary
+}
+
+// Status returns HTTPResponse.Status
+func (r VolumeListResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VolumeListResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type VolumeRemoveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IdResponse
+	JSON404      *ErrorResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r VolumeRemoveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VolumeRemoveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // ContainerCreateWithBodyWithResponse request with arbitrary body returning *ContainerCreateResponse
 func (c *ClientWithResponses) ContainerCreateWithBodyWithResponse(ctx context.Context, params *ContainerCreateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ContainerCreateResponse, error) {
 	rsp, err := c.ContainerCreateWithBody(ctx, params, contentType, body, reqEditors...)
@@ -1390,6 +1657,41 @@ func (c *ClientWithResponses) NetworkDisconnectWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseNetworkDisconnectResponse(rsp)
+}
+
+// VolumeCreateWithBodyWithResponse request with arbitrary body returning *VolumeCreateResponse
+func (c *ClientWithResponses) VolumeCreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VolumeCreateResponse, error) {
+	rsp, err := c.VolumeCreateWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVolumeCreateResponse(rsp)
+}
+
+func (c *ClientWithResponses) VolumeCreateWithResponse(ctx context.Context, body VolumeCreateJSONRequestBody, reqEditors ...RequestEditorFn) (*VolumeCreateResponse, error) {
+	rsp, err := c.VolumeCreate(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVolumeCreateResponse(rsp)
+}
+
+// VolumeListWithResponse request returning *VolumeListResponse
+func (c *ClientWithResponses) VolumeListWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*VolumeListResponse, error) {
+	rsp, err := c.VolumeList(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVolumeListResponse(rsp)
+}
+
+// VolumeRemoveWithResponse request returning *VolumeRemoveResponse
+func (c *ClientWithResponses) VolumeRemoveWithResponse(ctx context.Context, volumeName string, reqEditors ...RequestEditorFn) (*VolumeRemoveResponse, error) {
+	rsp, err := c.VolumeRemove(ctx, volumeName, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVolumeRemoveResponse(rsp)
 }
 
 // ParseContainerCreateResponse parses an HTTP response from a ContainerCreateWithResponse call
@@ -1844,6 +2146,105 @@ func ParseNetworkDisconnectResponse(rsp *http.Response) (*NetworkDisconnectRespo
 	return response, nil
 }
 
+// ParseVolumeCreateResponse parses an HTTP response from a VolumeCreateWithResponse call
+func ParseVolumeCreateResponse(rsp *http.Response) (*VolumeCreateResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VolumeCreateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON204 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseVolumeListResponse parses an HTTP response from a VolumeListWithResponse call
+func ParseVolumeListResponse(rsp *http.Response) (*VolumeListResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VolumeListResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []VolumeSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseVolumeRemoveResponse parses an HTTP response from a VolumeRemoveWithResponse call
+func ParseVolumeRemoveResponse(rsp *http.Response) (*VolumeRemoveResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VolumeRemoveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Create a container
@@ -1882,6 +2283,15 @@ type ServerInterface interface {
 	// Disconnect a container from a network
 	// (POST /networks/{network_id}/disconnect/{container_id})
 	NetworkDisconnect(ctx echo.Context, networkId string, containerId string) error
+	// Create a volume
+	// (POST /volumes/create)
+	VolumeCreate(ctx echo.Context) error
+	// List volumes
+	// (GET /volumes/list)
+	VolumeList(ctx echo.Context) error
+	// Remove a volume
+	// (DELETE /volumes/{volume_name})
+	VolumeRemove(ctx echo.Context, volumeName string) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -2080,6 +2490,40 @@ func (w *ServerInterfaceWrapper) NetworkDisconnect(ctx echo.Context) error {
 	return err
 }
 
+// VolumeCreate converts echo context to params.
+func (w *ServerInterfaceWrapper) VolumeCreate(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.VolumeCreate(ctx)
+	return err
+}
+
+// VolumeList converts echo context to params.
+func (w *ServerInterfaceWrapper) VolumeList(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.VolumeList(ctx)
+	return err
+}
+
+// VolumeRemove converts echo context to params.
+func (w *ServerInterfaceWrapper) VolumeRemove(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "volume_name" -------------
+	var volumeName string
+
+	err = runtime.BindStyledParameterWithLocation("simple", false, "volume_name", runtime.ParamLocationPath, ctx.Param("volume_name"), &volumeName)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter volume_name: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.VolumeRemove(ctx, volumeName)
+	return err
+}
+
 // This is a simple interface which specifies echo.Route addition functions which
 // are present on both echo.Echo and echo.Group, since we want to allow using
 // either of them for path registration
@@ -2120,48 +2564,55 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	router.DELETE(baseURL+"/networks/:network_id", wrapper.NetworkRemove)
 	router.POST(baseURL+"/networks/:network_id/connect/:container_id", wrapper.NetworkConnect)
 	router.POST(baseURL+"/networks/:network_id/disconnect/:container_id", wrapper.NetworkDisconnect)
+	router.POST(baseURL+"/volumes/create", wrapper.VolumeCreate)
+	router.GET(baseURL+"/volumes/list", wrapper.VolumeList)
+	router.DELETE(baseURL+"/volumes/:volume_name", wrapper.VolumeRemove)
 
 }
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
