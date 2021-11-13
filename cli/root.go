@@ -30,4 +30,5 @@ func init() {
 	RootCmd.PersistentFlags().StringVarP(&host, "host", "H", "", "Daemon socket to connect to: tcp://[host]:[port][path] or unix://[/path/to/socket]")
 	RootCmd.AddCommand(ContainerCommand())
 	RootCmd.AddCommand(ImageCommand())
+	RootCmd.AddCommand(NetworkCommand())
 }

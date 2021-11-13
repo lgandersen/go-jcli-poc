@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	Openapi "jcli/client"
@@ -53,7 +51,10 @@ func ContainerCreateCommand() *cobra.Command {
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerCreate(cmd, &name, config, args)
+			response, err := PostContainerCreate(&name, config, args)
+			if err == nil {
+				fmt.Println(response.JSON201.Id)
+			}
 		},
 	}
 
@@ -64,13 +65,6 @@ func ContainerCreateCommand() *cobra.Command {
 	flags.StringSliceVarP(config.Env, "env", "e", []string{}, "Set environment variables (e.g. --env FIRST=env --env SECOND=env)")
 	flags.StringSliceVarP(config.JailParam, "jailparam", "J", []string{"mount.devfs"}, "Specify a jail parameter, see jail(8) for details")
 	return cmd
-}
-
-func RunContainerCreate(cmd *cobra.Command, name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) {
-	response, err := PostContainerCreate(name, body, args)
-	if err == nil {
-		fmt.Println(response.JSON201.Id)
-	}
 }
 
 func PostContainerCreate(name *string, body Openapi.ContainerCreateJSONRequestBody, args []string) (*Openapi.ContainerCreateResponse, error) {
@@ -107,17 +101,13 @@ func ContainerRemoveCommand() *cobra.Command {
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerRemove(cmd, args)
+			response, err := PostContainerRemove(args)
+			if err == nil {
+				fmt.Println(response.JSON200.Id)
+			}
 		},
 	}
 	return cmd
-}
-
-func RunContainerRemove(cmd *cobra.Command, args []string) {
-	response, err := PostContainerRemove(args)
-	if err == nil {
-		fmt.Println(response.JSON200.Id)
-	}
 }
 
 func PostContainerRemove(args []string) (*Openapi.ContainerDeleteResponse, error) {
@@ -148,20 +138,16 @@ func ContainerStartCommand() *cobra.Command {
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerStart(&attach, args)
+			if attach {
+				StartAndAttachToContainer(args)
+			} else {
+				StartSeveralContainers(args)
+			}
 		},
 	}
 
 	cmd.Flags().BoolVarP(&attach, "attach", "a", true, "Attach STDOUT/STDERR")
 	return cmd
-}
-
-func RunContainerStart(attach *bool, args []string) {
-	if *attach {
-		StartAndAttachToContainer(args)
-	} else {
-		StartSeveralContainers(args)
-	}
 }
 
 func StartSeveralContainers(args []string) []string {
@@ -228,17 +214,13 @@ func ContainerStopCommand() *cobra.Command {
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerStop(cmd, args)
+			response, err := ContainerStop(args)
+			if err != nil {
+				fmt.Println(response.JSON200.Id)
+			}
 		},
 	}
 	return cmd
-}
-
-func RunContainerStop(cmd *cobra.Command, args []string) {
-	response, err := ContainerStop(args)
-	if err != nil {
-		fmt.Println(response.JSON200.Id)
-	}
 }
 
 func ContainerStop(args []string) (*Openapi.ContainerStopResponse, error) {
@@ -279,18 +261,14 @@ func ContainerListCommand() *cobra.Command {
 		Args:                  cobra.NoArgs,
 		DisableFlagsInUseLine: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			RunContainerList(all, args)
+			response, err := GetContainerList(all)
+			if err == nil {
+				PrintContainerList(response.JSON200)
+			}
 		},
 	}
 	listCmd.Flags().BoolVarP(&all, "all", "a", false, "Show all containers (default shows just running)")
 	return listCmd
-}
-
-func RunContainerList(all bool, args []string) {
-	response, err := GetContainerList(all)
-	if err == nil {
-		PrintContainerList(response.JSON200)
-	}
 }
 
 func GetContainerList(all bool) (*Openapi.ContainerListResponse, error) {
@@ -343,54 +321,4 @@ func PrintContainerList(container_list *[]Openapi.ContainerSummary) {
 			*ws.Name,
 		)
 	}
-}
-
-func NewHTTPClient() *Openapi.ClientWithResponses {
-	client, err := Openapi.NewClientWithResponses(jocker_engine_url)
-	if err != nil {
-		fmt.Println("Internal error: ", err)
-		os.Exit(1)
-	}
-	return client
-}
-
-// HumanDuration returns a human-readable approximation of a duration
-// (eg. "About a minute", "4 hours ago", etc.).
-func HumanDuration(d time.Duration) string {
-	if seconds := int(d.Seconds()); seconds < 1 {
-		return "Less than a second"
-	} else if seconds == 1 {
-		return "1 second"
-	} else if seconds < 60 {
-		return fmt.Sprintf("%d seconds", seconds)
-	} else if minutes := int(d.Minutes()); minutes == 1 {
-		return "About a minute"
-	} else if minutes < 60 {
-		return fmt.Sprintf("%d minutes", minutes)
-	} else if hours := int(d.Hours() + 0.5); hours == 1 {
-		return "About an hour"
-	} else if hours < 48 {
-		return fmt.Sprintf("%d hours", hours)
-	} else if hours < 24*7*2 {
-		return fmt.Sprintf("%d days", hours/24)
-	} else if hours < 24*30*2 {
-		return fmt.Sprintf("%d weeks", hours/24/7)
-	} else if hours < 24*365*2 {
-		return fmt.Sprintf("%d months", hours/24/30)
-	}
-	return fmt.Sprintf("%d years", int(d.Hours())/24/365)
-}
-
-func Cell(word string, max_len int) string {
-	word_length := len(word)
-
-	if word_length <= max_len {
-		return word + Sp(max_len-word_length) + Sp(2)
-	} else {
-		return word[:max_len] + ".."
-	}
-}
-
-func Sp(n int) string {
-	return strings.Repeat(" ", n)
 }

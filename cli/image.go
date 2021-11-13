@@ -98,5 +98,4 @@ func BuildImageAndListenForMessages(options ImageBuildOptions) {
 }
 
 func BuildImage(client *Openapi.ClientWithResponses) {
-
 }
