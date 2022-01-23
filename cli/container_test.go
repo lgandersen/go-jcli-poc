@@ -16,10 +16,10 @@ func TestContainerCreateListRemove(t *testing.T) {
 	var container_id string
 	var all = true
 	t.Run("list container expecting empty list", ContainerListExpectEmptyListing(all))
-	t.Run("create a new container", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
+	t.Run("create a new container", SuccesfullyCreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
 	t.Run("verify that the container is NOT being listed, with all set to false", ContainerListExpectEmptyListing(!all))
 	t.Run("verify that the container is being listed, with all set to true", ContainerListExpectContainer(all, "testerer"))
-	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+	t.Run("remove container", SuccesfullyRemoveContainer(t, container_id))
 	t.Run("list container expecting empty list again", ContainerListExpectEmptyListing(all))
 }
 
@@ -27,35 +27,35 @@ func TestContainerStartingAndStopping(t *testing.T) {
 	var container_id string
 	var attach = false
 	var list_all = false
-	t.Run("create a container that sleeps when started", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
+	t.Run("create  container that sleeps when started", SuccesfullyCreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
 	t.Run("start container", StartContainer("testerer", attach))
 	t.Run("verify that the container is running", VerifyRunningContainer(container_id))
 	t.Run("check that running container is listed when 'all' is false", ContainerListExpectContainer(list_all, "testerer"))
 	t.Run("stop container", StopContainer("testerer"))
 	t.Run("verify container is stopped", VerifyStoppedContainer(container_id))
-	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+	t.Run("remove container", SuccesfullyRemoveContainer(t, container_id))
 }
 
 func TestContainerAttachAndStart(t *testing.T) {
 	var container_id string
 	var attach = true
-	t.Run("create a new container", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
+	t.Run("create a new container", SuccesfullyCreateContainer(t, &container_id, "testerer", "base", []string{"/bin/ls"}))
 	stdout := RunCommandCollectStdOut(func() { StartContainer("testerer", attach)(t) })
 	expected_stdout := fmt.Sprintf(".cshrc\n.profile\nCOPYRIGHT\nbin\nboot\ndev\netc\nlib\nlibexec\nmedia\nmnt\nnet\nproc\nrescue\nroot\nsbin\nsys\ntmp\nusr\nvar\ncontainer %s stopped\n", container_id)
 	assert.Equal(t, stdout, expected_stdout)
-	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+	t.Run("remove container", SuccesfullyRemoveContainer(t, container_id))
 }
 
 func TestContainerReferencingFunctionality(t *testing.T) {
 	// FIXME: "try stopping a container that is already stopped"
 	var container_id string
 	var attach = false
-	t.Run("create a container that sleeps when started", CreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
+	t.Run("create a container that sleeps when started", SuccesfullyCreateContainer(t, &container_id, "testerer", "base", []string{"/bin/sleep", "10"}))
 	t.Run("start container using container id", StartContainer(container_id, attach))
 	t.Run("stop container using container id", StopContainer(container_id))
 	t.Run("start container using first part of the container id", StartContainer(container_id[:8], attach))
 	t.Run("stop container using first part of the container id", StopContainer(container_id[:8]))
-	t.Run("removed container", ContainerRemoveTesterer(t, container_id))
+	t.Run("removed container", SuccesfullyRemoveContainer(t, container_id))
 }
 
 func StopContainer(container_id string) func(t *testing.T) {
@@ -117,7 +117,7 @@ func ContainerListExpectContainer(all bool, container_name string) func(*testing
 	}
 }
 
-func ContainerRemoveTesterer(t *testing.T, container_id string) func(*testing.T) {
+func SuccesfullyRemoveContainer(t *testing.T, container_id string) func(*testing.T) {
 	return func(t *testing.T) {
 		args := []string{container_id}
 		response, err := PostContainerRemove(args)
@@ -129,14 +129,18 @@ func ContainerRemoveTesterer(t *testing.T, container_id string) func(*testing.T)
 	}
 }
 
-func CreateContainer(t *testing.T, container_id *string, name, image string, cmd []string) func(t *testing.T) {
+func SuccesfullyCreateContainer(t *testing.T, container_id *string, name, image string, cmd []string) func(t *testing.T) {
+	config := Openapi.ContainerCreateJSONRequestBody{
+		Networks:  &([]string{}),
+		Volumes:   &([]string{}),
+		Env:       &([]string{}),
+		JailParam: &([]string{}),
+	}
+	return SuccesfullyCreateCustomContainer(t, container_id, name, image, cmd, config)
+}
+
+func SuccesfullyCreateCustomContainer(t *testing.T, container_id *string, name, image string, cmd []string, config Openapi.ContainerCreateJSONRequestBody) func(t *testing.T) {
 	return func(t *testing.T) {
-		config := Openapi.ContainerCreateJSONRequestBody{
-			Networks:  &([]string{}),
-			Volumes:   &([]string{}),
-			Env:       &([]string{}),
-			JailParam: &([]string{}),
-		}
 		var args = make([]string, len(cmd)+1)
 		args[0] = image
 		copy(args[1:], cmd[:])
@@ -147,6 +151,12 @@ func CreateContainer(t *testing.T, container_id *string, name, image string, cmd
 		assert.Equal(t, len(response.JSON201.Id), 12)
 		*container_id = response.JSON201.Id
 	}
+}
+
+func StartContainerCollectOutput(t *testing.T, container_id string) string {
+	attach := true
+	stdout := RunCommandCollectStdOut(func() { StartContainer(container_id, attach)(t) })
+	return stdout
 }
 
 func RunCommandCollectStdOut(f func()) string {

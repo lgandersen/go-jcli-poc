@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	Openapi "jcli/client"
 
@@ -47,16 +46,8 @@ func NetworkListCommand() *cobra.Command {
 func NetworkList() (*Openapi.NetworkListResponse, error) {
 	client := NewHTTPClient()
 	response, err := client.NetworkListWithResponse(context.TODO())
-	if err != nil {
-		fmt.Println("Could not connect to jocker engine daemon: ", err)
-		return response, err
-	}
-
-	if response.StatusCode() != 200 {
-		fmt.Println("Jocker engine returned non-200 statuscode: ", response.Status())
-		return response, errors.New("non-200 statuscode")
-	}
-	return response, nil
+	err = verify_response(response, 200, err)
+	return response, err
 }
 
 func PrintNetworkList(networks *[]Openapi.NetworkSummary) {
@@ -91,19 +82,21 @@ func NetworkCreateCommand() *cobra.Command {
 	flags.StringVar(config.Subnet, "subnet", "", "Subnet in CIDR format that represents the network segment")
 	return cmd
 }
-func NetworkCreate(args []string, config Openapi.NetworkCreateJSONRequestBody) {
+
+func NetworkCreate(args []string, config Openapi.NetworkCreateJSONRequestBody) (*Openapi.NetworkCreateResponse, error) {
 	config.Name = args[0]
 	client := NewHTTPClient()
 	response, err := client.NetworkCreateWithResponse(context.TODO(), config)
-	err = verify_response(response.StatusCode(), 201, err)
+	err = verify_response(response, 201, err)
 	if err == nil {
 		fmt.Println(response.JSON201.Id)
 	}
+	return response, err
 }
 
 func NetworkRemoveCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:                   "remove NETWORK",
+		Use:                   "rm NETWORK",
 		Short:                 "Remove a network",
 		Long:                  `Remove a network`,
 		Args:                  cobra.MinimumNArgs(1),
@@ -113,15 +106,20 @@ func NetworkRemoveCommand() *cobra.Command {
 	return cmd
 }
 
-func RemoveNetworks(name_or_ids []string) {
-	for _, name_or_id := range name_or_ids {
+func RemoveNetworks(name_or_ids []string) ([]*Openapi.NetworkRemoveResponse, []error) {
+	errs := make([]error, len(name_or_ids))
+	responses := make([]*Openapi.NetworkRemoveResponse, len(name_or_ids))
+	for idx, name_or_id := range name_or_ids {
 		client := NewHTTPClient()
 		response, err := client.NetworkRemoveWithResponse(context.TODO(), name_or_id)
-		err = verify_response(response.StatusCode(), 200, err)
+		err = verify_response(response, 200, err)
 		if err == nil {
 			fmt.Println(response.JSON200.Id)
 		}
+		errs[idx] = err
+		responses[idx] = response
 	}
+	return responses, errs
 }
 
 func NetworkConnectCommand() *cobra.Command {
@@ -136,15 +134,13 @@ func NetworkConnectCommand() *cobra.Command {
 	return cmd
 }
 
-func NetworkConnect(args []string) {
+func NetworkConnect(args []string) (*Openapi.NetworkConnectResponse, error) {
 	network_name := args[0]
 	container_name := args[1]
 	client := NewHTTPClient()
 	response, err := client.NetworkConnectWithResponse(context.TODO(), network_name, container_name)
-	err = verify_response(response.StatusCode(), 204, err)
-	if err == nil {
-		fmt.Println(response.JSON204.Id)
-	}
+	err = verify_response(response, 204, err)
+	return response, err
 }
 
 func NetworkDisconnectCommand() *cobra.Command {
@@ -154,18 +150,16 @@ func NetworkDisconnectCommand() *cobra.Command {
 		Long:                  `Disconnect a container from a network`,
 		Args:                  cobra.ExactArgs(2),
 		DisableFlagsInUseLine: true,
-		Run:                   func(cmd *cobra.Command, args []string) { NetworkConnect(args) },
+		Run:                   func(cmd *cobra.Command, args []string) { NetworkDisconnect(args) },
 	}
 	return cmd
 }
 
-func NetworkDisconnect(args []string) {
+func NetworkDisconnect(args []string) (*Openapi.NetworkDisconnectResponse, error) {
 	network_name := args[0]
 	container_name := args[1]
 	client := NewHTTPClient()
 	response, err := client.NetworkDisconnectWithResponse(context.TODO(), network_name, container_name)
-	err = verify_response(response.StatusCode(), 204, err)
-	if err == nil {
-		fmt.Println(response.JSON204.Id)
-	}
+	err = verify_response(response, 204, err)
+	return response, err
 }

@@ -18,15 +18,19 @@ func NewHTTPClient() *Openapi.ClientWithResponses {
 	return client
 }
 
-func verify_response(status int, expected_status int, err error) error {
+type ResponseWithCode interface {
+	StatusCode() int
+}
+
+func verify_response(response ResponseWithCode, expected_status int, err error) error {
 	if err != nil {
 		fmt.Println("Could not connect to jocker engine daemon: ", err)
 		return err
 	}
 
-	if status != expected_status {
-		fmt.Println("Jocker engine returned unsuccesful statuscode: ", status)
-		return errors.New("non-200 statuscode")
+	if response.StatusCode() != expected_status {
+		fmt.Println("Jocker engine returned unsuccesful statuscode: ", response.StatusCode())
+		return errors.New("unsuccesful statuscode")
 	}
 	return nil
 }

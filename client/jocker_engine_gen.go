@@ -1423,7 +1423,6 @@ func (r NetworkRemoveResponse) StatusCode() int {
 type NetworkConnectResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON204      *IdResponse
 	JSON404      *ErrorResponse
 	JSON409      *ErrorResponse
 	JSON500      *ErrorResponse
@@ -1448,7 +1447,6 @@ func (r NetworkConnectResponse) StatusCode() int {
 type NetworkDisconnectResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON204      *IdResponse
 	JSON404      *ErrorResponse
 	JSON500      *ErrorResponse
 }
@@ -2076,13 +2074,6 @@ func ParseNetworkConnectResponse(rsp *http.Response) (*NetworkConnectResponse, e
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
-		var dest IdResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON204 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -2123,13 +2114,6 @@ func ParseNetworkDisconnectResponse(rsp *http.Response) (*NetworkDisconnectRespo
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 204:
-		var dest IdResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON204 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -2613,11 +2597,11 @@ var swaggerSpec = []string{
 	"jLviqsVSaryVVGxGsrmnMkR36qUsRbeHKi+Z/FGT5h0j3Z4cOnPP6lOvuD3m6A0tNTmKWrw4/yk6+PZM",
 	"onbWUF5IM9VtceiGiEra9lec1hT9pm/RwVk6EWpLzHkOubp7UzsA28fmzVH/x8cMhVkcmstG1n7KM4j9",
 	"6yKVK2uY/YbRpZi30pIfLcK0z166h5r90Y2Jc+Ud16Zq7vKndY2gXBIPjWKlP9thHKu5CEckq/b1FMu6",
-	"xbI99CplG8ftV+rG28svXzuam+4KsopYzJ5O/VFN2vutyuH7d7PDYvjokSBaGpA5EpZZEIAcZ/E+IPZR",
-	"E5JKDjopSYtbMeVxa36zeOkOwj5lKxb0zX8k4t38TEjlA13NaTnzyds8eZvfq7dBhIU9LvazyVVBrH1t",
-	"fAnd+b9Urb2vkd9C+pbFc/OiU3vDritdq0vn8qLOusL5sQw5v5xUXKHax7sPucwahvHwWw/mbqV+zkm1",
-	"C1mr0UerY5cuU23XMS3+WbEhrDv7YC553ltI2qV0qyOd188czr3G+3dS7OWQEEYM4W/m0guz38OKr0Tk",
-	"YvH/AAAA//9rkye8PT4AAA==",
+	"xbI99CplG8ftV+rG28svXzuam+4KsopYzJ5O/VFN2vutyuH7d7PDYvioHVVKXZvTW5kFAchxFu8DuB41",
+	"d6jkoPOHtLjAUp6M5peAl64L7FNiYfHZ/J8f3s0lhFQ+0CucljOfHMOTY3gEx4AIC3tc7GfrqEJD+zL2",
+	"EhDzf1Raewsiv9vzLUvS5vWh9oZdF6VWF6Tl9Zd15ejRI+WL+ZWf4mLSPt4oyGXWMIyH3yUwNxb1c06q",
+	"XR5ajT5adbh0RWm7PmTxL4ANYd3ZB3N18t7yzC6lW3XmvNTl8MM13r+TEiqHhDBiCH8zl16Y/R7WUSUi",
+	"F4v/BwAA//+tflsUkz0AAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
